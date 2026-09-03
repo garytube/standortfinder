@@ -1,0 +1,48 @@
+@if (store.requestDialogOpen()) {
+  <div class="modal-backdrop" role="presentation" (click)="close()">
+    <section class="dialog" role="dialog" aria-modal="true" aria-labelledby="request-title" (click)="$event.stopPropagation()">
+      <header>
+        <h2 id="request-title">Angebot anfragen</h2>
+        <button type="button" aria-label="Schließen" (click)="close()">×</button>
+      </header>
+      <form (submit)="onSubmit($event)" novalidate>
+        <div class="summary">
+          <div><span>Ausgewählte Standorte</span><strong>{{ store.selectedSiteCount() }}</strong></div>
+          <div><span>Werbeflächen</span><strong>{{ store.selectedPanelCount() }}</strong></div>
+          <div><span>{{ store.selectedCities().length === 1 ? 'Stadt' : 'Städte' }}</span><strong>{{ store.selectedCities().join(', ') || '—' }}</strong></div>
+          @if (store.origin(); as origin) { <div><span>Ausgangspunkt</span><strong>{{ origin.label }}</strong></div> }
+        </div>
+
+        <div class="field">
+          <label for="salutation">Anrede *</label>
+          <select id="salutation" [formField]="requestForm.salutation">
+            <option value="">Bitte wählen</option><option value="Frau">Frau</option><option value="Herr">Herr</option><option value="Divers">Divers</option>
+          </select>
+        </div>
+        <div class="grid-2">
+          <div class="field"><label for="firstName">Vorname *</label><input id="firstName" autocomplete="given-name" [formField]="requestForm.firstName" /></div>
+          <div class="field"><label for="lastName">Nachname *</label><input id="lastName" autocomplete="family-name" [formField]="requestForm.lastName" /></div>
+        </div>
+        <div class="field"><label for="company">Unternehmen *</label><input id="company" autocomplete="organization" [formField]="requestForm.company" /></div>
+        <div class="grid-2">
+          <div class="field"><label for="email">Geschäftliche E-Mail-Adresse *</label><input id="email" type="email" autocomplete="email" [formField]="requestForm.email" /></div>
+          <div class="field"><label for="phone">Telefonnummer</label><input id="phone" type="tel" autocomplete="tel" [formField]="requestForm.phone" /></div>
+        </div>
+        <div class="field"><label for="companyLocation">Standort Firmensitz *</label><select id="companyLocation" [formField]="requestForm.companyLocation"><option value="">Bitte wählen</option><option value="Berlin">Berlin</option><option value="Hamburg">Hamburg</option><option value="Nordrhein-Westfalen">Nordrhein-Westfalen</option><option value="Bayern">Bayern</option><option value="Baden-Württemberg">Baden-Württemberg</option><option value="International">International</option></select></div>
+        <div class="field"><label for="period">Wunschzeitraum</label><input id="period" placeholder="z. B. ab Oktober, zwei Wochen" [formField]="requestForm.period" /></div>
+        <div class="field"><label for="message">Ihr Anliegen *</label><textarea id="message" rows="3" placeholder="Worum geht es bei Ihrer Kampagne?" [formField]="requestForm.message"></textarea></div>
+        <label class="consent"><input type="checkbox" [formField]="requestForm.privacyAccepted" /><span>Ich habe die <a href="https://www.walldecaux.de/datenschutz" target="_blank" rel="noopener">Datenschutzbestimmungen</a> zur Kenntnis genommen und möchte kontaktiert werden. *</span></label>
+
+        @if (submissionNotice()) {
+          <p class="notice" [class.error]="submissionError()" [attr.role]="submissionError() ? 'alert' : 'status'">{{ submissionNotice() }}</p>
+        }
+        <p class="privacy-note">Ihre Eingaben werden in dieser Version nicht gespeichert oder übertragen.</p>
+        <footer>
+          <button type="button" class="secondary" (click)="close()">Abbrechen</button>
+          <a class="secondary" href="https://www.walldecaux.de/ansprechpartner" target="_blank" rel="noopener">Ansprechpartner</a>
+          <button type="submit" class="request">Eingaben prüfen</button>
+        </footer>
+      </form>
+    </section>
+  </div>
+}

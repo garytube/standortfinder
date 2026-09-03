@@ -1,0 +1,16 @@
+<div
+  class="map"
+  leaflet
+  [leafletOptions]="options"
+  [leafletLayers]="layers()"
+  (leafletMapReady)="onMapReady($event)"
+  (leafletClick)="onMapClick($event)"
+  (leafletDoubleClick)="onMapDoubleClick($event)"
+  aria-label="Karte der Werbestandorte"
+></div>
+
+@if (store.drawingPolygon()) {
+  <div class="draw-hint" role="status">
+    Gebiet durch Klicks markieren, mit Doppelklick abschließen
+  </div>
+}

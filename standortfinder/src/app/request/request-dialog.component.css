@@ -1,0 +1,24 @@
+:host { display: contents; }
+.modal-backdrop { position: fixed; inset: 0; z-index: 1500; display: grid; place-items: center; padding: 24px; background: rgba(24,24,24,.42); }
+.dialog { width: min(650px, 100%); max-height: 90dvh; overflow: auto; background: #fff; box-shadow: var(--shadow-lg); }
+header { display: flex; align-items: center; gap: 16px; padding: 22px 26px 17px; border-bottom: 1px solid var(--gray-b); }
+h2 { flex: 1; margin: 0; font-size: 24px; }
+header button { color: var(--ink-30); font-size: 24px; }
+form { padding: 22px 26px 0; }
+.summary { margin-bottom: 20px; padding: 14px 16px; background: var(--gray-a); }
+.summary div { display: flex; justify-content: space-between; gap: 14px; padding: 3px 0; font-size: var(--t-sm); }
+.summary strong { text-align: right; }
+.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.field { margin-bottom: 12px; }
+.field label { display: block; margin-bottom: 5px; color: var(--ink-30); font-size: var(--t-xs); }
+input:not([type="checkbox"]), select, textarea { width: 100%; padding: 9px 11px; border: 1px solid var(--gray-b); background: #fff; }
+input.ng-invalid.ng-touched, select.ng-invalid.ng-touched, textarea.ng-invalid.ng-touched { border-color: #b42318; background: #fff6f5; }
+.consent { display: flex; align-items: flex-start; gap: 10px; margin: 4px 0 15px; padding: 10px; font-size: var(--t-sm); }
+.consent input { width: 17px; height: 17px; margin-top: 2px; accent-color: var(--ink); }
+.notice { padding: 10px; background: var(--blue-soft); font-size: var(--t-sm); }
+.notice.error { background: #fff0ee; color: #b42318; }
+.privacy-note { color: var(--ink-30); font-size: var(--t-xs); }
+footer { display: flex; justify-content: flex-end; gap: 8px; margin: 20px -26px 0; padding: 18px 26px 22px; border-top: 1px solid var(--gray-b); }
+.secondary, .request { display: inline-flex; align-items: center; padding: 9px 13px; border: 1px solid var(--ink); color: var(--ink); font-size: var(--t-sm); font-weight: 700; text-decoration: none; }
+.request { background: var(--yellow); border-color: var(--yellow); }
+@media (max-width: 759px) { .modal-backdrop { padding: 0; } .dialog { width: 100%; max-height: 100dvh; } .grid-2 { grid-template-columns: 1fr; gap: 0; } footer { flex-wrap: wrap; } }

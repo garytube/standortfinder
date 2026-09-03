@@ -1,0 +1,104 @@
+<aside class="origin-panel" [class.open]="store.originPanelOpen()">
+  <header>
+    <div>
+      <h2>Suche eingrenzen</h2>
+      <p>Optional. Ohne Eingrenzung sehen Sie alle Flächen der Stadt.</p>
+    </div>
+    <button
+      type="button"
+      class="close"
+      aria-label="Panel schließen"
+      (click)="store.originPanelOpen.set(false)"
+    >×</button>
+  </header>
+
+  <nav aria-label="Art des Ausgangspunkts">
+    <button type="button" [attr.aria-pressed]="store.originMode() === 'address'" (click)="chooseMode('address')">
+      <span class="origin-icon">⌂</span><span><strong>Mein Standort</strong><small>Adresse eingeben</small></span>
+    </button>
+    <button type="button" [attr.aria-pressed]="store.originMode() === 'poi'" (click)="chooseMode('poi')">
+      <span class="origin-icon">◎</span><span><strong>POI Suche</strong><small>Sehenswürdigkeit oder Filiale</small></span>
+    </button>
+    <button type="button" [attr.aria-pressed]="store.originMode() === 'route'" (click)="chooseMode('route')">
+      <span class="origin-icon">↝</span><span><strong>Strecke oder ÖPNV-Linie</strong><small>Entlang einer Route suchen</small></span>
+    </button>
+    <button type="button" [attr.aria-pressed]="store.originMode() === 'polygon'" (click)="chooseMode('polygon')">
+      <span class="origin-icon">⬡</span><span><strong>Eigenes Gebiet</strong><small>Wunschgebiet zeichnen</small></span>
+    </button>
+  </nav>
+
+  <section class="configuration">
+    @if (store.originMode() === 'address' || store.originMode() === 'poi') {
+      <label for="placeQuery">
+        {{ store.originMode() === 'address' ? 'Adresse' : 'Ort oder Filiale' }}
+      </label>
+      <div class="input-row">
+        <input
+          id="placeQuery"
+          [placeholder]="store.originMode() === 'address' ? 'Straße und Hausnummer' : 'z. B. Hauptbahnhof, REWE'"
+          [value]="placeQuery()"
+          (input)="updateText(placeQuery, $event)"
+          (keydown.enter)="findPlace()"
+        />
+        <button type="button" class="primary" (click)="findPlace()">Suchen</button>
+      </div>
+      @if (search.placesResource.isLoading()) {
+        <p class="status">Kartendienst wird durchsucht …</p>
+      } @else if (search.placesResource.error()) {
+        <p class="status error">Die Suche ist gerade nicht erreichbar. Bitte erneut versuchen.</p>
+      } @else {
+        <div class="suggestions">
+          @for (result of search.placesResource.value(); track result.label) {
+            <button type="button" (click)="usePlace(result)">{{ result.label }}</button>
+          }
+        </div>
+      }
+      <p class="provider">Suche über OpenStreetMap Nominatim</p>
+    }
+
+    @if (store.originMode() === 'route') {
+      <label for="transitReference">ÖPNV-Linie</label>
+      <div class="transit-grid">
+        <input
+          id="transitReference"
+          placeholder="z. B. U1, S41, M10"
+          [value]="transitReference()"
+          (input)="updateText(transitReference, $event)"
+        />
+        <select [value]="transitType()" (change)="updateText(transitType, $event)" aria-label="Verkehrsmittel">
+          <option value="subway">U-Bahn</option>
+          <option value="light_rail">S-Bahn</option>
+          <option value="tram">Tram</option>
+          <option value="bus">Bus</option>
+        </select>
+      </div>
+      <button type="button" class="primary wide" [disabled]="!store.cityBounds()" (click)="findTransit()">Linie laden</button>
+      @if (search.transitResource.isLoading()) {
+        <p class="status">Linienverlauf wird geladen …</p>
+      } @else if (search.transitResource.error()) {
+        <p class="status error">Die Linie konnte nicht geladen werden.</p>
+      } @else if (search.transitResource.value().length > 1) {
+        <button type="button" class="secondary wide" (click)="useTransit()">Gefundene Linie übernehmen</button>
+      }
+      <div class="divider"><span>oder</span></div>
+      <label class="file-button">
+        GPX oder GeoJSON hochladen
+        <input type="file" accept=".gpx,.geojson,.json" (change)="loadRouteFile($event)" />
+      </label>
+      @if (fileError()) { <p class="status error">{{ fileError() }}</p> }
+    }
+
+    @if (store.originMode() === 'polygon') {
+      <p class="status">Klicken Sie mindestens drei Eckpunkte auf der Karte. Ein Doppelklick schließt das Gebiet.</p>
+      <button type="button" class="secondary wide" (click)="store.drawingPolygon.set(true)">Neu zeichnen</button>
+    }
+
+    @if (store.origin()) {
+      <div class="active-origin">
+        <strong>Aktiv</strong>
+        <span>{{ store.origin()?.label }}</span>
+        <button type="button" (click)="store.setOrigin(null)">Eingrenzung aufheben</button>
+      </div>
+    }
+  </section>
+</aside>

@@ -1,0 +1,2866 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WallDecaux – Standorte finden</title>
+
+<!-- Prototyp: von Suchmaschinen und KI-Crawlern ausschließen.
+     Die Angaben gelten für alle gängigen Bots; googlebot und bingbot
+     stehen zusätzlich einzeln, weil manche Crawler nur ihren eigenen
+     Namen auswerten. Vor dem Livegang ersatzlos entfernen. -->
+<meta name="robots" content="noindex, nofollow, noarchive, nosnippet, noimageindex, notranslate, nocache, max-snippet:-1, max-image-preview:none">
+<meta name="googlebot" content="noindex, nofollow, noarchive, nosnippet, noimageindex">
+<meta name="bingbot" content="noindex, nofollow, noarchive, nosnippet">
+<meta name="slurp" content="noindex, nofollow">
+<meta name="duckduckbot" content="noindex, nofollow">
+<meta name="baiduspider" content="noindex, nofollow">
+<meta name="yandex" content="noindex, nofollow">
+<meta name="GPTBot" content="noindex, nofollow">
+<meta name="ChatGPT-User" content="noindex, nofollow">
+<meta name="Google-Extended" content="noindex, nofollow">
+<meta name="CCBot" content="noindex, nofollow">
+<meta name="PerplexityBot" content="noindex, nofollow">
+<meta name="referrer" content="no-referrer">
+
+<!-- Schrift: Typekit-Kit von WallDecaux -->
+<link rel="preconnect" href="https://use.typekit.net" crossorigin>
+<link rel="stylesheet" href="https://use.typekit.net/vxo6bti.css">
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+
+<style>
+/* ══════════════════════════════════════════════════════════════════════════
+   1. DESIGN-TOKENS — alles zentral hier
+   ══════════════════════════════════════════════════════════════════════════ */
+
+:root{
+  --blue:#3399ff;
+  --gray-a:#F0F4F7;
+  --gray-b:#E3EAF0;
+  --yellow:#f1d432;
+  --icon-bg:#EDEDED;    /* Symbolflächen, neutral statt bläulich */
+  --hover-bg:#F5F5F5;   /* Hover auf Zeilen und Karten, passend dazu */
+  --scroll-track:#F2F2F2;
+  --scroll-thumb:#C2C2C2;   /* neutral und dunkel genug, um sichtbar zu sein */
+  --ink:#000000;      /* Flächen, Rahmen, Symbole — identisch mit --text */
+  --bg:#ffffff;
+
+  /* Schrift kennt genau zwei Farben. --ink bleibt für Flächen,
+     Rahmen und Symbole reserviert. */
+  --text:#000000;
+  --ink-30:#6E6E6E;   /* zweite Schriftfarbe, 5,4:1 auf Weiß */
+  --text-on-dark:#ffffff;
+  --text-on-dark-30:rgba(255,255,255,.72);   /* Gegenstück zu --ink-30 */
+  --blue-soft:#ebf4ff;   /* aufgehelltes --blue, für die ausgewählte Ergebniskarte */
+
+  --font:"trade-gothic-next","Trade Gothic Next","Helvetica Neue",Helvetica,Arial,sans-serif;
+
+  /* Typoskala */
+  --t-lead:1.125rem;          /* 18px */
+  --t-body:15px;
+  --t-sm:14px;
+  --t-xs:12px;
+  --track:.09em;
+
+  --radius:1px;
+  --radius-lg:1px;
+  --shadow:0 2px 14px rgba(24,24,24,.09);
+  --shadow-lg:0 10px 40px rgba(24,24,24,.16);
+
+  --nav-border:rgba(255,255,255,.3);
+  --panel-top:88px;   /* unterhalb der schwebenden Leiste */
+  --dock-h:72px;
+}
+
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+@supports (height:100dvh){html,body{height:100dvh}}
+body{
+  font-family:var(--font);font-size:var(--t-body);line-height:1.5;
+  color:var(--text);background:var(--bg);overflow:hidden;
+  -webkit-font-smoothing:antialiased;
+}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
+input,select,textarea{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--blue);outline-offset:2px;border-radius:var(--radius)}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+[hidden]{display:none!important}
+
+.eyebrow{
+  font-size:var(--t-xs);letter-spacing:var(--track);text-transform:uppercase;
+  font-weight:700;color:var(--ink-30);
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   2. EINSTIEG — die Frage
+   ══════════════════════════════════════════════════════════════════════════ */
+/* Logo — Größe über die Höhe in .logo-sm */
+.logo{display:block;color:var(--text);line-height:0}
+.logo svg{width:100%;height:auto;display:block;overflow:visible}
+/* Höhengesteuert und schrumpffest: Safari rechnet aspect-ratio bei
+   flexiblen Elementen anders und schnitt das Logo dadurch an. */
+.logo-sm{height:14px;width:auto;flex:0 0 auto;padding:0;border-radius:var(--radius)}
+.logo-sm svg{height:100%;width:auto;display:block}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   3. ANWENDUNG
+   ══════════════════════════════════════════════════════════════════════════ */
+#app{position:relative;height:100%}
+
+/* Leiste im Design der Website-Navigation: schwebendes Milchglas.
+   Der Glaseffekt liegt auf ::before, damit er die Popover nicht aushebelt
+   (ein Element mit backdrop-filter erzeugt einen eigenen Backdrop-Root). */
+.topbar{
+  position:fixed;top:16px;left:16px;right:16px;z-index:900;
+  display:flex;align-items:center;gap:10px;
+  padding:11px 24px;background:transparent;
+}
+.topbar::before{
+  content:"";position:absolute;inset:0;z-index:-1;
+  background:rgba(255,255,255,.5);
+  backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);
+  border:1px solid var(--nav-border);border-radius:var(--radius);
+}
+.topbar .logo-sm{margin-right:14px;flex:0 0 auto}
+
+/* Elemente rechts in der Leiste — einheitliche Größe und Hover */
+.nav-link{
+  display:inline-flex;align-items:center;gap:7px;
+  font-size:14px;color:var(--text);text-decoration:none;white-space:nowrap;
+  padding:6px 6px;transition:opacity .15s ease;
+}
+.nav-link:hover{opacity:.6}
+.nav-link svg{width:18px;height:18px;flex:0 0 18px;color:var(--text)}
+
+/* Kontakt — Werte und Hover wie der Kontakt-Button der Website-Navigation */
+.cta-link{
+  padding:6px 12px;font-size:14px;font-weight:400;
+  text-decoration:none;white-space:nowrap;
+  background:var(--yellow);color:var(--text);border-radius:var(--radius);
+}
+.cta-link:hover{opacity:.85}
+
+.menu-item{
+  display:block;width:100%;text-align:left;
+  padding:9px 12px;font-size:14px;font-weight:400;
+  color:var(--text);text-decoration:none;white-space:nowrap;
+  border-radius:var(--radius);transition:background .2s ease;
+}
+.menu-item:hover{background:rgba(0,0,0,.06)}
+.menu-sep{border:0;border-top:1px solid rgba(0,0,0,.12);margin:6px 4px}
+
+@media (prefers-reduced-motion:reduce){
+  .pop.pop--glass{clip-path:none;transition:none}
+}
+
+.chip{
+/* Alle Bedienelemente der Leiste tragen dasselbe Design: deckend weiß,
+   damit sie sich vom Glas und von der Karte abheben. Unterschieden wird
+   nur über die Rahmenfarbe — beim Überfahren und im geöffneten Zustand. */
+  display:inline-flex;align-items:center;gap:7px;padding:8px 13px;
+  background:#fff;color:var(--text);
+  border:1px solid #fff;border-radius:var(--radius);
+  font-size:var(--t-sm);white-space:nowrap;
+  transition:border-color .15s ease;
+}
+.chip:hover{border-color:var(--ink-30)}
+.chip[aria-expanded="true"]{border-color:var(--text)}
+.chip b{font-weight:700}
+.chip svg{color:var(--ink-30)}
+/* Aktiver Filter: nur der Rahmen zeigt es an, die Fläche bleibt weiß */
+.chip.accent{border-color:var(--text)}
+.spacer{flex:1}
+
+.icon-btn{padding:8px;border-radius:var(--radius);color:var(--ink-30);display:inline-flex}
+.icon-btn:hover{background:var(--hover-bg);color:var(--text)}
+
+/* Popover */
+.pop{
+  position:absolute;z-index:1200;top:calc(var(--panel-top) - 14px);
+  background:var(--bg);border:1px solid var(--gray-b);border-radius:var(--radius-lg);
+  box-shadow:var(--shadow-lg);width:320px;padding:18px;
+}
+.pop h3{margin:0 0 3px;font-size:var(--t-body);font-weight:700}
+.pop p.help{margin:0 0 14px;font-size:var(--t-xs);color:var(--ink-30);line-height:1.5}
+
+/* Burger-Menü — Glas und Aufklappen wie in der Website-Navigation:
+   dieselben Werte, dasselbe Herauswachsen über clip-path. */
+.pop.pop--glass{
+  display:flex;flex-direction:column;gap:2px;
+  width:auto;min-width:240px;padding:10px;
+  background:rgba(255,255,255,.5);
+  backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);
+  border:1px solid rgba(0,0,0,.18);border-radius:var(--radius);
+  box-shadow:0 6px 20px rgba(0,0,0,.12);
+  clip-path:inset(0 0 100% 0);
+  transition:clip-path .42s cubic-bezier(.22,.61,.36,1);
+}
+.pop.pop--glass.open{clip-path:inset(0 0 0 0)}
+/* Menüs mit Überschrift brauchen mehr Luft als reine Linklisten */
+.pop.pop--glass-pad{padding:16px}
+
+.stage{position:absolute;inset:0}
+#mapRoot{position:absolute;inset:0;background:var(--gray-a)}
+.leaflet-container{font-family:var(--font)}
+.leaflet-control-attribution{font-size:10px}
+
+/* Linke Karte: Ausgangspunkt */
+.panel-left{
+  position:absolute;top:var(--panel-top);left:16px;z-index:800;width:296px;
+  max-height:calc(100dvh - var(--panel-top) - 64px);
+  /* Spalte als Säule: Kopf bleibt stehen, der Rest scrollt.
+     overflow:hidden hält die abgerundeten Ecken sauber. */
+  display:flex;flex-direction:column;overflow:hidden;
+  background:var(--bg);border:1px solid var(--gray-b);border-radius:var(--radius-lg);
+  box-shadow:var(--shadow);
+}
+.panel-left header{flex:0 0 auto;padding:11px 16px 9px;border-bottom:1px solid var(--gray-b)}
+.panel-scroll{
+  flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;
+}
+/* siehe Abschnitt Scrollbalken weiter unten */
+.panel-left h2{margin:0;font-size:var(--t-body);font-weight:700;line-height:1.25}
+.panel-hint{margin:2px 0 0;font-size:var(--t-xs);color:var(--ink-30);line-height:1.3}
+.origin-list{padding:4px 6px 6px}
+.origin{
+  display:flex;align-items:center;gap:11px;width:100%;padding:7px 10px;
+  border-radius:var(--radius);text-align:left;font-size:var(--t-sm);line-height:1.3;
+}
+.origin:hover{background:var(--hover-bg)}
+.origin[aria-pressed="true"]{background:#fff;color:var(--text)}
+.origin[aria-pressed="true"] .origin-ico{background:var(--blue);color:var(--text-on-dark)}
+.origin[aria-pressed="true"] em{color:var(--ink-30)}
+.origin-ico{
+  width:32px;height:32px;flex:0 0 32px;border-radius:var(--radius);
+  background:var(--icon-bg);
+  display:grid;place-content:center;color:var(--blue);
+}
+.origin-ico svg{width:17px;height:17px}
+.origin span{flex:1;min-width:0}
+.origin strong{display:block;font-weight:700;line-height:1.3}
+.origin em{font-style:normal;font-size:var(--t-xs);color:var(--ink-30);line-height:1.25;display:block;margin-top:1px}
+
+/* ── Scrollbalken ──────────────────────────────────────────────────────
+   Dauerhaft sichtbar statt eingeblendet: Ein Balken, der erst beim Scrollen
+   erscheint, nimmt in dem Moment Breite weg — der Inhalt daneben springt.
+   Mit fester Spur bleibt die Breite konstant. */
+.panel-scroll,
+.result-list,
+.drawer-body{
+  scrollbar-width:thin;                       /* Firefox */
+  scrollbar-color:var(--scroll-thumb) var(--scroll-track);
+  scrollbar-gutter:stable;                    /* Platz auch ohne Balken */
+}
+.panel-scroll::-webkit-scrollbar,
+.result-list::-webkit-scrollbar,
+.drawer-body::-webkit-scrollbar{width:10px}
+.panel-scroll::-webkit-scrollbar-track,
+.result-list::-webkit-scrollbar-track,
+.drawer-body::-webkit-scrollbar-track{background:var(--scroll-track)}
+.panel-scroll::-webkit-scrollbar-thumb,
+.result-list::-webkit-scrollbar-thumb,
+.drawer-body::-webkit-scrollbar-thumb{
+  background:var(--scroll-thumb);border-radius:8px;
+  border:2px solid var(--scroll-track);       /* wirkt schlanker als er ist */
+}
+.panel-scroll::-webkit-scrollbar-thumb:hover,
+.result-list::-webkit-scrollbar-thumb:hover,
+.drawer-body::-webkit-scrollbar-thumb:hover{background:#A8A8A8}
+
+/* Zeilen im Werbeträger-Menü — eigene Klasse, seit die Werkzeuge
+   links Kacheln sind. */
+.media-row{
+  display:flex;align-items:center;gap:11px;width:100%;
+  padding:9px 10px;border-radius:var(--radius);cursor:pointer;
+  font-size:var(--t-sm);transition:background .14s ease;
+}
+.media-row:hover{background:rgba(0,0,0,.06)}
+.media-row input{width:16px;height:16px;flex:0 0 16px;accent-color:var(--ink)}
+.media-ico{
+  width:32px;height:32px;flex:0 0 32px;border-radius:var(--radius);
+  background:var(--icon-bg);display:grid;place-content:center;
+}
+.media-ico svg{width:18px;height:18px}
+.media-text{flex:1;min-width:0}
+.media-text strong{display:block;font-weight:400}
+.media-text em{font-style:normal;font-size:var(--t-xs);color:var(--ink-30)}
+
+.origin-config{padding:0 16px 16px;border-top:1px solid var(--gray-b);padding-top:14px}
+.origin-config:empty{display:none}
+.origin-clear{padding:0 16px 16px}
+.origin-clear button[hidden]{display:none}
+
+/* Adressvorschläge im Ausgangspunkt-Panel */
+.suggest{
+  border:1px solid var(--gray-b);border-radius:var(--radius);background:var(--bg);
+  max-height:180px;overflow:auto;margin-bottom:12px;
+}
+.suggest:empty{display:none}
+.suggest button{
+  display:block;width:100%;text-align:left;padding:8px 10px;
+  font-size:var(--t-sm);border-bottom:1px solid var(--gray-a);
+}
+.suggest button:last-child{border-bottom:0}
+.suggest button:hover{background:var(--hover-bg)}
+.field{margin-bottom:12px}
+.field label{display:block;font-size:var(--t-xs);color:var(--ink-30);margin-bottom:5px}
+.field label output{float:right;font-weight:700;color:var(--text);font-variant-numeric:tabular-nums}
+.input,select.input{
+  width:100%;padding:9px 11px;border:1px solid var(--gray-b);border-radius:var(--radius);
+  font-size:var(--t-sm);background:var(--bg);
+}
+.input:hover{border-color:var(--ink-30)}
+input[type=range]{width:100%;accent-color:var(--blue)}
+
+.btn{
+  padding:10px 16px;border-radius:var(--radius);font-size:var(--t-sm);font-weight:700;
+  background:var(--ink);color:var(--text-on-dark);border:1px solid var(--ink);
+}
+.btn:hover{background:#1f1f1f}   /* aufgehellt, da die Grundfarbe reines Schwarz ist */
+.btn.ghost{background:none;color:var(--text)}
+
+/* Gelb bleibt den Handlungen vorbehalten, die zum Angebot führen.
+   Werkzeugknöpfe wie „Übernehmen" oder „Laden" bleiben schwarz. */
+.btn.cta{background:var(--yellow);border-color:var(--yellow);color:var(--text)}
+.btn.cta:hover{background:var(--yellow);opacity:.85}
+.btn.ghost:hover{background:var(--hover-bg)}
+.btn.wide{width:100%}
+.btn[disabled]{opacity:.35;cursor:not-allowed}
+.btn-row{display:flex;gap:8px}
+.status{font-size:var(--t-xs);color:var(--ink-30);margin:8px 0 0;line-height:1.5}
+.status.err{color:#c0392b}
+.input.err{border-color:#c0392b;background:#fdf3f2}
+
+/* Zustimmung zur Datenverarbeitung */
+.consent{
+  display:flex;gap:10px;align-items:flex-start;
+  margin:4px 0 16px;padding:10px;border:1px solid transparent;border-radius:var(--radius);
+  font-size:var(--t-sm);line-height:1.45;cursor:pointer;
+}
+.consent input{width:17px;height:17px;flex:0 0 17px;margin-top:1px;accent-color:var(--ink)}
+.consent a{color:var(--text)}
+.consent.err{border-color:#c0392b;background:#fdf3f2}
+
+/* Rechte Karte: Ergebnisse */
+.panel-right{
+  position:absolute;top:var(--panel-top);right:16px;bottom:calc(var(--dock-h) + 16px);z-index:800;width:330px;
+  background:var(--bg);border:1px solid var(--gray-b);border-radius:var(--radius-lg);
+  box-shadow:var(--shadow);display:flex;flex-direction:column;overflow:hidden;
+}
+.panel-right header{
+  display:flex;align-items:center;gap:12px;
+  padding:15px 16px 13px;border-bottom:1px solid var(--gray-b);
+}
+.panel-right header h2{flex:1;min-width:0}
+.btn.small{padding:6px 11px;font-size:var(--t-xs);white-space:nowrap}
+.panel-right h2{margin:4px 0 0;font-size:var(--t-body);font-weight:700}
+/* Hinweis auf Standorte, die in anderen Städten ausgewählt sind */
+.other-cities{
+  flex:0 0 auto;margin:0;padding:9px 16px;
+  background:var(--blue-soft);border-bottom:1px solid var(--gray-b);
+  font-size:var(--t-xs);color:var(--text);line-height:1.4;
+}
+.link-inline{
+  padding:0;font-size:var(--t-xs);color:var(--text);
+  text-decoration:underline;background:none;border:0;
+}
+.link-inline:hover{opacity:.7}
+
+.result-list{flex:1;overflow-y:auto;padding:8px}
+/* siehe Abschnitt Scrollbalken weiter unten */
+
+.card{
+  display:flex;gap:12px;width:100%;text-align:left;padding:11px;
+  border:1px solid transparent;border-radius:var(--radius);margin-bottom:2px;
+  transition:background .12s,border-color .12s;
+}
+.card:hover{background:var(--hover-bg)}
+.card.is-selected{border-color:var(--text);background:var(--blue-soft)}
+.thumb{
+  position:relative;
+  width:56px;height:56px;flex:0 0 56px;border-radius:var(--radius);
+  background:var(--icon-bg);
+  display:grid;place-content:center;
+}
+.thumb svg{width:30px;height:30px}
+
+/* Anzahl der Flächen als kleine Zahl am Werbeträger-Icon */
+.icon-badge{
+  position:absolute;top:-4px;right:-4px;min-width:16px;height:16px;padding:0 4px;
+  display:grid;place-content:center;
+  background:var(--ink);color:var(--text-on-dark);
+  font-size:10px;font-weight:700;font-variant-numeric:tabular-nums;line-height:1;
+  border-radius:9px;border:2px solid var(--bg);
+}
+.card-main{flex:1;min-width:0}
+.card-main strong{display:block;font-size:var(--t-sm);font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.card-meta{font-size:var(--t-xs);color:var(--ink-30);margin-top:2px}
+.card-foot{display:flex;align-items:baseline;gap:8px;margin-top:6px}
+.price{font-size:var(--t-sm);font-weight:700;font-variant-numeric:tabular-nums}
+.price em{font-style:normal;font-weight:400;font-size:var(--t-xs);color:var(--ink-30)}
+.dist{
+  margin-left:auto;font-size:var(--t-xs);color:var(--ink-30);font-variant-numeric:tabular-nums;
+}
+.empty{padding:40px 24px;text-align:center;color:var(--ink-30);font-size:var(--t-sm);line-height:1.6}
+.list-note{
+  margin:6px 11px 14px;padding:11px 12px;background:var(--gray-a);
+  border-radius:var(--radius);font-size:var(--t-xs);color:var(--ink-30);line-height:1.5;
+}
+
+/* Dock */
+.dock{
+  position:absolute;left:50%;bottom:16px;transform:translateX(-50%);z-index:850;
+  display:flex;align-items:center;gap:18px;padding:12px 14px 12px 22px;
+  background:linear-gradient(160deg,#1474D3,#42007E);
+  color:var(--text-on-dark);border-radius:var(--radius);box-shadow:var(--shadow-lg);
+  transition:opacity .2s,transform .2s;
+}
+.dock.is-idle{opacity:0;pointer-events:none;transform:translateX(-50%) translateY(10px)}
+.dock-count{font-size:var(--t-sm);white-space:nowrap}
+.dock-count b{font-weight:700}
+.dock-count span{color:var(--text-on-dark-30)}
+/* Gleiche Anmutung wie die Städte-Chips im Einstiegspanel */
+.dock .btn,.dock .btn.ghost{
+  background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.24);color:var(--text-on-dark);
+  transition:background .14s ease,color .14s ease,border-color .14s ease;
+}
+.dock .btn:hover,.dock .btn.ghost:hover{
+  background:var(--yellow);color:var(--text);border-color:var(--yellow);
+  /* Im Dock zählt die volle Farbe: Die sonst übliche Aufhellung über die
+     Deckkraft würde das Gelb auf dem Verlauf dahinter abdunkeln. */
+  opacity:1;
+}
+
+/* Auswahl-Schublade */
+.drawer{
+  position:absolute;top:0;right:0;bottom:0;width:400px;z-index:1100;
+  background:var(--bg);border-left:1px solid var(--gray-b);box-shadow:var(--shadow-lg);
+  display:flex;flex-direction:column;transform:translateX(100%);transition:transform .24s ease;
+}
+.drawer.open{transform:none}
+.drawer header{display:flex;align-items:center;gap:10px;padding:18px 18px 15px;border-bottom:1px solid var(--gray-b)}
+.drawer h2{flex:1;margin:0;font-size:var(--t-body);font-weight:700}
+.drawer-body{flex:1;overflow-y:auto;padding:8px 18px}
+.drawer-foot{padding:16px 18px;border-top:1px solid var(--gray-b)}
+.drawer-actions{display:flex;gap:8px;margin-bottom:8px}
+.drawer-actions .btn{flex:1}
+
+/* Linkfeld im Teilen-Dialog */
+.share-link{
+  display:flex;gap:8px;margin-top:14px;
+}
+.share-link input{
+  flex:1;min-width:0;padding:10px 12px;font-size:var(--t-sm);
+  border:1px solid var(--gray-b);border-radius:var(--radius);background:var(--gray-a);
+  color:var(--ink-30);
+}
+
+.sel-row{padding:14px 0;border-bottom:1px solid var(--gray-a)}
+
+/* Zwischenüberschrift je Stadt in der Auswahl */
+.sel-city{
+  display:flex;align-items:baseline;gap:10px;
+  margin:18px 0 0;padding-bottom:6px;border-bottom:1px solid var(--ink);
+  font-size:var(--t-body);font-weight:700;
+}
+.sel-city:first-child{margin-top:6px}
+.sel-city span{margin-left:auto;font-size:var(--t-xs);font-weight:400;color:var(--ink-30)}
+.sel-head{display:flex;gap:8px;align-items:flex-start}
+.sel-head strong{flex:1;font-size:var(--t-sm)}
+.frame{display:flex;align-items:center;gap:10px;padding:6px 0 6px 0;font-size:var(--t-sm)}
+.frame .fdot{position:relative;width:16px;height:16px;flex:0 0 16px;line-height:0}
+.frame .fdot .icon-badge{top:-7px;right:-7px;min-width:14px;height:14px;font-size:9px;border-width:1.5px}
+.frame .fname{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--ink-30)}
+.frame .fprice{font-variant-numeric:tabular-nums;font-weight:700}
+
+/* Aufklappbare Flächen-Auswahl in der Schublade */
+.sel-expand{padding:2px 0;margin-top:1px;color:var(--ink-30);display:inline-flex;flex:0 0 auto}
+.sel-expand svg{transition:transform .15s ease}
+.sel-expand[aria-expanded="true"] svg{transform:rotate(90deg)}
+.sel-belegung{padding:2px 0 4px}
+.sel-belegung + .sel-belegung{border-top:1px solid var(--gray-a)}
+.sel-panels{display:flex;flex-wrap:wrap;gap:5px 16px;padding:4px 0 4px 26px}
+.sel-panel{display:flex;align-items:center;gap:7px;font-size:var(--t-xs);color:var(--ink-30);cursor:pointer}
+.sel-panel input{width:15px;height:15px;flex:0 0 15px;accent-color:var(--ink)}
+
+/* Modal */
+.modal-bg{position:fixed;inset:0;z-index:1500;background:rgba(24,24,24,.42);display:grid;place-items:center;padding:24px}
+.modal{
+  background:var(--bg);border-radius:var(--radius-lg);box-shadow:var(--shadow-lg);
+  width:min(620px,100%);max-height:86vh;overflow:auto;
+}
+.modal header{display:flex;align-items:flex-start;gap:16px;padding:24px 26px 18px;border-bottom:1px solid var(--gray-b)}
+.modal h2{margin:4px 0 0;font-size:24px;font-weight:700;letter-spacing:-.015em}
+.modal-x{margin-left:auto;flex:0 0 auto}
+.modal-body{padding:22px 26px}
+.modal-foot{padding:18px 26px 24px;display:flex;gap:10px;justify-content:flex-end;border-top:1px solid var(--gray-b)}
+.grid-2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.summary{background:var(--gray-a);border-radius:var(--radius);padding:14px 16px;margin-bottom:20px}
+.summary-row{display:flex;justify-content:space-between;font-size:var(--t-sm);padding:3px 0}
+.summary-row span:last-child{font-weight:700;font-variant-numeric:tabular-nums}
+
+.colmap-row{display:flex;align-items:center;gap:10px;margin-bottom:7px}
+.colmap-row>span{flex:0 0 118px;font-size:var(--t-xs);color:var(--ink-30)}
+
+/* Toast */
+.toast{
+  position:fixed;left:50%;bottom:104px;transform:translateX(-50%);z-index:2500;
+  background:var(--ink);color:var(--text-on-dark);padding:11px 18px;border-radius:var(--radius);
+  font-size:var(--t-sm);box-shadow:var(--shadow-lg);max-width:82vw;text-align:center;
+}
+
+/* Einstiegspanel — sitzt links, wo nach der Stadtwahl der Ausgangspunkt steht */
+#panelIntro{left:16px;right:auto;width:340px}
+
+/* Einstiegspanel */
+.intro-panel{
+  flex:1;overflow-y:auto;padding:26px 22px 28px;
+  background:linear-gradient(170deg,#004f9f,#702283);color:var(--text-on-dark);
+}
+.intro-panel .eyebrow{color:var(--text-on-dark-30)}
+.intro-lead{font-size:var(--t-lead);line-height:1.5;margin:10px 0 26px;color:var(--text-on-dark)}
+.intro-label{
+  font-size:var(--t-xs);letter-spacing:var(--track);text-transform:uppercase;
+  font-weight:700;color:var(--text-on-dark-30);margin:0 0 10px;
+}
+.intro-cities{display:flex;flex-wrap:wrap;gap:6px}
+.intro-city{
+  padding:7px 11px;font-size:var(--t-sm);color:var(--text-on-dark);
+  background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.24);
+  border-radius:var(--radius);
+  transition:background .14s ease,color .14s ease,border-color .14s ease;
+}
+.intro-city:hover:not([disabled]){background:var(--yellow);color:var(--text);border-color:var(--yellow)}
+.intro-city[disabled]{opacity:.35;cursor:not-allowed}
+
+/* Stadtmarker in der Deutschlandansicht */
+.cty{display:flex;align-items:center;gap:7px;white-space:nowrap;cursor:pointer}
+.cty-dot{
+  width:14px;height:14px;flex:0 0 14px;border-radius:50%;
+  background:var(--blue);border:2.5px solid #fff;
+  box-shadow:0 1px 5px rgba(24,24,24,.35);
+  transition:transform .16s ease;
+}
+.cty-name{
+  display:inline-flex;align-items:baseline;gap:6px;
+  padding:3px 8px;font-size:var(--t-sm);color:var(--text);
+  background:rgba(255,255,255,.9);border-radius:var(--radius);
+  box-shadow:0 1px 5px rgba(24,24,24,.18);
+  transition:background .16s ease,color .16s ease;
+}
+.cty-name em{font-style:normal;font-size:var(--t-xs);color:var(--ink-30)}
+.cty:hover .cty-dot{transform:scale(1.25)}
+.cty:hover .cty-name{background:var(--ink);color:var(--text-on-dark)}
+.cty:hover .cty-name em{color:var(--text-on-dark-30)}
+/* Beschriftung links: Inhalt umdrehen und den Kasten so weit nach links
+   schieben, dass der Punkt wieder auf seiner Koordinate sitzt. */
+.cty.links{flex-direction:row-reverse;transform:translateX(calc(-100% + 14px))}
+.cty.off{cursor:default;opacity:.45}
+.cty.off .cty-dot{background:#b8c4ce}
+.cty.off .cty-name{background:rgba(255,255,255,.75)}
+
+/* Pflichtangaben — schmale Glasleiste unten links */
+.legal-bar{
+  position:absolute;left:16px;bottom:16px;z-index:700;
+  display:flex;align-items:center;
+  padding:5px 10px;background:rgba(255,255,255,.5);
+  backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);
+  border:1px solid var(--nav-border);border-radius:var(--radius);
+  /* identische Glaswerte wie die Kopfleiste */
+}
+.legal-bar a{
+  padding:2px 9px;font-size:var(--t-xs);color:var(--ink-30);
+  text-decoration:none;white-space:nowrap;
+}
+.legal-bar a:hover{color:var(--text)}
+.legal-bar a + a{border-left:1px solid rgba(24,24,24,.14)}
+
+/* Auf dem Telefon liegt die Leiste unter dem Sheet — dort wandern die
+   Angaben ans Ende der Inhalte. */
+.legal-inline{display:none;padding:16px 16px 20px;border-top:1px solid var(--gray-b)}
+.legal-inline a{
+  display:inline-block;padding:5px 10px 5px 0;
+  font-size:var(--t-xs);color:var(--ink-30);text-decoration:none;
+}
+.legal-inline--dark{border-top-color:rgba(255,255,255,.2);padding-left:0;padding-right:0;margin-top:22px}
+.legal-inline--dark a{color:rgba(255,255,255,.7)}
+
+/* Werbeträger-Marker auf der Karte */
+/* Der Marker trägt sein Icon als Hintergrundbild, nicht als eingebettetes
+   SVG. Ein <use>-Verweis erzeugt pro Marker einen eigenen Schattenbaum —
+   bei über hundert Markern kostet das beim Ziehen der Karte spürbar
+   Bildrate. Als Hintergrundbild ist es ein Element statt vier. */
+.mk{
+  display:block;   /* ohne Angabe wäre der span inline und ohne Maße */
+  width:32px;height:32px;
+  background-color:#fff;background-repeat:no-repeat;
+  background-position:center;background-size:22px 22px;
+  border:0;border-radius:50%;
+  box-shadow:0 1px 6px rgba(24,24,24,.3);
+  transition:transform .12s ease;
+}
+/* Ausgewählt: Fläche im Corporate-Blau, Icon weiß.
+   !important, weil die Werbeträgerfarbe direkt am Element steht. */
+.mk.sel{background-color:var(--blue);box-shadow:0 1px 6px rgba(20,85,150,.45)}
+.mk.hover{transform:scale(1.22)}
+.leaflet-marker-icon:focus-visible .mk{outline:2px solid var(--blue);outline-offset:2px}
+
+/* Karten-Popup */
+.leaflet-popup-content-wrapper{border-radius:var(--radius);box-shadow:var(--shadow-lg);padding:0}
+.leaflet-popup-content{margin:0;width:260px!important}
+.pp{padding:15px 16px}
+.pp-ico{display:block;margin-bottom:6px}
+.pp h4{margin:0;font-size:var(--t-sm);font-weight:700}
+.pp .m{font-size:var(--t-xs);color:var(--ink-30);margin:3px 0 10px}
+.pp .row{display:flex;justify-content:space-between;font-size:var(--t-sm);padding:3px 0}
+.pp .row span:first-child{color:var(--ink-30)}
+.pp .row span:last-child{font-weight:700}
+.pp .btn{margin-top:12px}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   6. RESPONSIVE
+   Drei Layouts aus einem Code:
+   ab 1100px  Desktop — beide Boxen neben der Karte
+   760–1099   Tablet  — Ausgangspunkt als Überlagerung, Ergebnisse schmaler
+   unter 760  Telefon — Ergebnisse als Bottom Sheet mit Ziehgeste
+   ══════════════════════════════════════════════════════════════════════════ */
+.only-compact{display:none}
+.sheet-grip{display:none}
+
+/* Tippflächen auf Touchgeräten vergrößern, ohne die Optik zu ändern */
+@media (pointer:coarse){
+  .mk{position:relative}
+  .mk::after{content:"";position:absolute;inset:-10px}
+  .cty{padding:6px 0}
+  .chip{padding:11px 14px}
+  .origin{padding:13px 10px}
+  .intro-city{padding:11px 12px}
+}
+
+/* ── Tablet und schmaler Desktop ─────────────────────────────────── */
+@media (max-width:1099px){
+  .only-compact{display:inline-flex}
+  .topbar{padding:10px 14px;gap:8px;overflow-x:auto;scrollbar-width:none}
+  .topbar::-webkit-scrollbar{display:none}
+  .nav-link span{display:none}
+  .panel-right{width:300px}
+
+  /* Ausgangspunkt liegt jetzt über der Karte statt daneben */
+  .panel-left{
+    left:16px;width:320px;max-height:calc(100dvh - var(--panel-top) - 24px);
+    box-shadow:var(--shadow-lg);
+    display:none;
+  }
+  .panel-left.open{display:flex}
+}
+
+/* ── Telefon ──────────────────────────────────────────────────────── */
+@media (max-width:759px){
+  :root{--panel-top:76px}
+  .legal-bar{display:none}
+  .legal-inline{display:block}
+
+  .topbar{left:8px;right:8px;top:8px;padding:8px 10px}
+  .logo-sm{height:11px}
+  .chip b{max-width:11ch;overflow:hidden;text-overflow:ellipsis}
+
+  .panel-left{left:8px;right:8px;width:auto;max-height:calc(100dvh - var(--panel-top) - 16px)}
+
+  /* Rechte Box wird zum Bottom Sheet */
+  .panel-right{
+    --peek:78px;
+    top:auto;left:0;right:0;bottom:0;width:auto;
+    height:88dvh;max-height:88dvh;
+    border:0;border-top:1px solid var(--gray-b);
+    border-radius:0;box-shadow:0 -6px 28px rgba(24,24,24,.2);
+    transform:translateY(calc(100% - var(--peek)));
+    transition:transform .28s cubic-bezier(.22,.61,.36,1);
+    padding-bottom:env(safe-area-inset-bottom);
+  }
+  .panel-right .sheet-grip,
+  .panel-right > header{touch-action:none;cursor:grab}
+  .panel-right.half{transform:translateY(46%)}
+  .panel-right.full{transform:translateY(0)}
+  .panel-right.dragging{transition:none}
+
+  .sheet-grip{
+    display:block;width:38px;height:4px;margin:9px auto 3px;
+    background:var(--gray-b);border-radius:4px;flex:0 0 auto;
+  }
+  #panelIntro{left:0;right:0;width:auto}
+  .intro-panel{padding:18px 18px 24px}
+  .intro-lead{font-size:var(--t-body);margin-bottom:18px}
+  .panel-right header{padding:8px 16px 12px}
+
+  /* Dock sitzt über dem eingefahrenen Sheet und weicht beim Aufziehen */
+  .dock{
+    bottom:calc(86px + env(safe-area-inset-bottom));
+    left:8px;right:8px;transform:none;
+    padding:10px 12px;gap:10px;
+  }
+  .dock.is-idle{transform:translateY(10px)}
+  body.sheet-open .dock{opacity:0;pointer-events:none}
+  .dock-count{flex:1;font-size:var(--t-xs)}
+
+  .drawer{width:100%}
+  .modal-bg{padding:0}
+  .modal{width:100%;max-height:100dvh;border-radius:0}
+  .grid-2{grid-template-columns:1fr}
+  .pop{width:min(320px,calc(100vw - 24px))}
+}
+
+</style>
+</head>
+<body>
+
+<!-- Logo als Symbol, einmal definiert, mehrfach verwendet -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+<symbol id="wd-logo-so" viewBox="0 0 2020 106" fill="currentColor">
+<path fill-rule="evenodd" d="M 22.44,0.00 L 40.00,69.56 L 41.37,66.00 L 58.36,0.00 Z M 80.29,0.00 L 96.87,68.00 L 98.00,68.28 L 115.64,0.00 Z M 135.23,0.00 L 107.25,99.00 L 106.00,99.51 L 86.00,99.51 L 84.84,99.00 L 68.00,29.14 L 65.80,36.00 L 49.84,99.00 L 49.00,99.51 L 28.00,99.42 L 0.00,1.51 Z M 235.60,0.00 L 235.60,98.00 L 235.00,99.51 L 216.00,99.51 L 214.71,99.00 L 214.63,0.00 Z M 272.39,0.00 L 272.37,98.00 L 272.32,99.00 L 271.00,99.51 L 252.00,99.51 L 251.27,99.00 L 251.21,0.00 Z M 341.65,0.00 L 353.00,2.77 L 361.00,6.68 L 368.00,12.32 L 373.41,19.00 L 377.37,27.00 L 380.24,38.00 L 380.71,46.00 L 380.30,60.00 L 378.06,69.00 L 374.48,77.00 L 370.30,83.00 L 365.00,88.21 L 359.00,92.30 L 350.00,96.23 L 341.00,98.47 L 330.00,99.51 L 294.00,99.51 L 292.48,99.00 L 292.42,0.00 Z M 853.00,104.67 L 846.00,104.67 L 844.99,104.00 L 844.99,3.00 L 846.00,2.33 L 853.00,2.33 L 853.67,3.00 L 853.67,104.00 L 853.00,104.67 Z M 966.00,99.01 L 954.00,98.21 L 947.00,96.21 L 942.00,93.47 L 936.79,89.00 L 933.72,85.00 L 930.57,79.00 L 928.88,74.00 L 945.00,68.72 L 946.12,70.00 L 948.57,76.00 L 952.01,80.00 L 958.00,83.27 L 965.00,84.33 L 974.00,82.43 L 978.00,79.45 L 980.19,76.00 L 980.79,72.00 L 980.50,69.00 L 979.10,66.00 L 977.00,63.67 L 970.00,59.81 L 953.00,54.28 L 943.00,49.50 L 936.66,44.00 L 934.61,41.00 L 932.57,36.00 L 931.72,32.00 L 931.66,25.00 L 933.57,18.00 L 936.58,13.00 L 941.00,8.66 L 946.00,5.66 L 951.00,3.72 L 960.00,2.33 L 972.00,2.99 L 978.00,4.57 L 983.00,6.99 L 988.00,10.79 L 991.00,14.49 L 995.47,23.00 L 995.00,24.28 L 981.00,29.39 L 977.00,23.31 L 973.00,19.47 L 969.00,17.57 L 962.00,16.67 L 955.00,18.57 L 951.67,21.00 L 949.81,24.00 L 949.34,27.00 L 949.67,31.00 L 953.00,35.33 L 958.00,38.19 L 978.00,44.79 L 986.00,48.61 L 989.00,50.66 L 993.34,55.00 L 995.34,58.00 L 997.43,64.00 L 998.01,73.00 L 997.28,78.00 L 995.50,83.00 L 992.39,88.00 L 988.00,92.21 L 983.00,95.21 L 973.00,98.34 L 966.00,99.01 Z M 1379.00,99.01 L 1369.00,98.34 L 1362.00,96.28 L 1355.00,92.47 L 1348.79,87.00 L 1344.57,81.00 L 1341.66,75.00 L 1338.79,65.00 L 1337.66,57.00 L 1337.66,45.00 L 1338.72,37.00 L 1340.79,29.00 L 1345.53,19.00 L 1351.00,12.19 L 1357.00,7.50 L 1363.00,4.57 L 1372.00,2.50 L 1383.00,2.50 L 1390.00,3.88 L 1397.00,6.88 L 1403.81,12.00 L 1408.21,17.00 L 1412.21,24.00 L 1415.39,33.00 L 1417.34,45.00 L 1417.34,57.00 L 1416.21,65.00 L 1414.12,73.00 L 1409.28,83.00 L 1403.00,90.21 L 1397.00,94.43 L 1390.00,97.34 L 1379.00,99.01 Z M 1045.00,97.34 L 1028.00,97.50 L 1026.99,97.00 L 1026.99,20.00 L 1026.00,19.34 L 1002.00,19.12 L 1002.00,3.88 L 1070.34,4.00 L 1070.50,18.00 L 1070.00,19.34 L 1046.00,19.34 L 1045.34,20.00 L 1045.00,97.34 Z M 1146.00,97.43 L 1128.00,97.50 L 1127.33,97.00 L 1121.27,75.00 L 1120.00,72.67 L 1091.00,72.73 L 1084.00,97.12 L 1067.00,97.50 L 1065.57,97.00 L 1094.00,3.72 L 1118.21,4.00 L 1146.21,96.00 L 1146.00,97.43 Z M 1232.00,97.50 L 1216.00,97.50 L 1214.66,97.00 L 1176.00,30.13 L 1175.50,32.00 L 1175.50,97.00 L 1175.00,97.50 L 1159.00,97.50 L 1158.33,97.00 L 1158.55,4.00 L 1180.00,3.66 L 1181.00,4.33 L 1215.00,64.74 L 1215.66,63.00 L 1215.88,4.00 L 1232.45,4.00 L 1232.67,97.00 L 1232.00,97.50 Z M 1288.00,97.01 L 1254.00,97.50 L 1253.33,97.00 L 1253.33,5.00 L 1254.00,3.66 L 1284.00,3.66 L 1294.00,4.66 L 1302.00,6.61 L 1309.00,9.66 L 1314.81,14.00 L 1320.12,20.00 L 1324.21,28.00 L 1326.21,35.00 L 1327.28,42.00 L 1327.34,56.00 L 1325.12,68.00 L 1321.43,77.00 L 1316.42,84.00 L 1309.00,90.34 L 1301.00,94.21 L 1288.00,97.01 Z M 1504.00,97.50 L 1486.00,97.50 L 1484.72,97.00 L 1469.43,63.00 L 1468.00,60.34 L 1467.00,60.01 L 1452.00,60.01 L 1450.67,61.00 L 1450.67,97.00 L 1450.00,97.50 L 1433.00,97.50 L 1432.50,97.00 L 1432.50,5.00 L 1433.00,3.66 L 1467.00,3.66 L 1477.00,4.66 L 1485.00,6.72 L 1489.00,8.57 L 1492.55,11.00 L 1496.47,15.00 L 1498.34,18.00 L 1500.39,24.00 L 1501.01,32.00 L 1500.21,38.00 L 1498.43,43.00 L 1494.21,49.00 L 1490.00,52.34 L 1485.13,55.00 L 1504.21,95.00 L 1504.90,97.00 L 1504.00,97.50 Z M 1553.00,97.01 L 1552.00,97.50 L 1536.00,97.50 L 1534.66,97.00 L 1534.66,20.00 L 1534.00,19.34 L 1510.00,19.12 L 1510.00,3.88 L 1578.34,4.00 L 1578.50,18.00 L 1578.00,19.34 L 1554.00,19.34 L 1553.01,20.00 L 1553.00,97.01 Z M 1602.00,97.50 L 1595.00,97.50 L 1594.33,97.00 L 1594.55,4.00 L 1649.00,3.88 L 1649.34,10.00 L 1648.00,11.01 L 1603.00,11.01 L 1602.50,12.00 L 1602.50,44.00 L 1603.00,44.99 L 1636.00,44.99 L 1636.50,46.00 L 1636.50,51.00 L 1636.00,52.34 L 1603.00,52.34 L 1602.50,53.00 L 1602.50,97.00 L 1602.00,97.50 Z M 1674.00,97.50 L 1667.00,97.50 L 1666.33,97.00 L 1666.33,5.00 L 1667.00,3.66 L 1674.00,3.66 L 1674.50,5.00 L 1674.50,97.00 L 1674.00,97.50 Z M 1768.00,97.01 L 1767.00,97.50 L 1760.00,97.47 L 1758.79,96.00 L 1710.00,11.67 L 1709.34,13.00 L 1709.34,97.00 L 1708.00,97.50 L 1702.00,97.50 L 1700.99,97.00 L 1701.32,4.00 L 1715.01,4.00 L 1759.00,80.99 L 1759.99,80.00 L 1759.99,5.00 L 1761.00,3.66 L 1767.68,4.00 L 1768.00,97.01 Z M 1823.00,97.01 L 1795.00,97.50 L 1794.50,97.00 L 1794.50,5.00 L 1795.00,3.66 L 1823.00,3.99 L 1834.00,5.72 L 1840.00,7.79 L 1847.00,11.72 L 1852.00,16.45 L 1855.39,21.00 L 1859.34,30.00 L 1861.47,41.00 L 1861.50,58.00 L 1860.28,66.00 L 1856.21,77.00 L 1851.42,84.00 L 1844.00,90.34 L 1836.00,94.21 L 1823.00,97.01 Z M 1937.00,97.50 L 1882.00,97.50 L 1881.50,97.00 L 1881.50,5.00 L 1882.00,3.66 L 1934.68,4.00 L 1935.01,10.00 L 1934.00,11.01 L 1890.00,11.34 L 1890.00,44.66 L 1922.00,44.99 L 1922.50,46.00 L 1922.50,51.00 L 1922.00,52.34 L 1890.00,52.56 L 1889.67,89.00 L 1891.00,89.99 L 1937.00,89.99 L 1937.50,91.00 L 1937.50,97.00 L 1937.00,97.50 Z M 2018.00,97.50 L 2010.00,97.50 L 2008.99,97.00 L 1987.00,54.67 L 1962.67,55.00 L 1962.50,97.00 L 1962.00,97.50 L 1955.00,97.50 L 1954.33,97.00 L 1954.33,5.00 L 1955.00,3.66 L 1983.00,3.66 L 1993.00,4.66 L 1998.00,5.79 L 2005.00,8.88 L 2008.00,11.19 L 2011.39,15.00 L 2014.28,22.00 L 2015.01,28.00 L 2014.39,35.00 L 2013.21,39.00 L 2010.34,44.00 L 2007.00,47.42 L 2004.00,49.50 L 1996.23,53.00 L 1997.81,57.00 L 2018.21,96.00 L 2018.57,97.00 L 2018.00,97.50 Z M 1827.23,89.00 L 1836.00,86.19 L 1841.00,83.10 L 1845.33,79.00 L 1849.19,73.00 L 1852.43,63.00 L 1853.50,54.00 L 1853.33,43.00 L 1851.19,32.00 L 1848.00,25.01 L 1845.10,21.00 L 1843.00,18.81 L 1837.00,14.81 L 1827.00,11.67 L 1819.00,11.01 L 1804.00,11.01 L 1802.67,12.00 L 1802.67,89.00 L 1804.00,89.99 L 1820.00,89.99 L 1827.23,89.00 Z M 1988.98,47.00 L 1996.00,45.38 L 2000.00,43.19 L 2003.33,40.00 L 2005.00,36.99 L 2006.27,33.00 L 2006.43,27.00 L 2005.38,22.00 L 2003.19,18.00 L 1999.00,14.50 L 1995.00,12.62 L 1991.00,11.67 L 1983.00,11.01 L 1963.00,11.01 L 1962.50,12.00 L 1962.50,47.00 L 1963.00,47.50 L 1985.00,47.50 L 1988.98,47.00 Z M 325.65,84.00 L 333.00,83.20 L 342.00,80.24 L 348.00,76.01 L 352.22,71.00 L 354.31,67.00 L 356.44,60.00 L 357.46,51.00 L 356.87,42.00 L 355.36,35.00 L 352.28,28.00 L 348.38,23.00 L 343.00,18.73 L 339.00,16.83 L 332.00,15.07 L 316.00,14.66 L 315.08,16.00 L 315.07,83.00 L 316.00,84.17 L 325.65,84.00 Z M 1378.98,84.00 L 1384.00,83.19 L 1388.00,81.27 L 1392.00,77.54 L 1394.50,74.00 L 1397.10,68.00 L 1398.33,63.00 L 1399.33,55.00 L 1399.33,46.00 L 1397.33,34.00 L 1393.27,25.00 L 1390.00,21.42 L 1386.00,18.67 L 1383.00,17.54 L 1377.00,16.67 L 1371.00,17.81 L 1367.00,19.90 L 1363.47,23.00 L 1360.62,27.00 L 1358.73,31.00 L 1356.81,38.00 L 1355.67,53.00 L 1356.73,63.00 L 1357.73,67.00 L 1361.73,76.00 L 1365.46,80.00 L 1369.00,82.33 L 1375.00,83.99 L 1378.98,84.00 Z M 1287.98,81.00 L 1294.00,79.43 L 1298.00,77.38 L 1303.00,72.69 L 1306.43,67.00 L 1308.27,61.00 L 1309.27,54.00 L 1309.33,46.00 L 1308.33,39.00 L 1306.43,33.00 L 1304.27,29.00 L 1300.54,25.00 L 1297.00,22.57 L 1292.00,20.67 L 1286.00,19.67 L 1272.00,19.67 L 1271.34,21.00 L 1271.34,81.00 L 1272.00,81.50 L 1287.98,81.00 Z M 1466.98,45.00 L 1473.00,44.27 L 1476.00,43.19 L 1479.00,41.19 L 1481.43,38.00 L 1482.50,34.00 L 1482.43,29.00 L 1480.27,24.00 L 1476.00,20.81 L 1472.00,19.62 L 1451.00,19.56 L 1450.90,45.00 L 1466.98,45.00 Z M 1116.27,57.00 L 1106.00,20.27 L 1104.67,22.00 L 1095.12,57.00 L 1096.00,57.66 L 1115.00,57.66 L 1116.27,57.00 Z M 160.00,101.09 L 154.00,101.26 L 148.00,100.30 L 141.00,97.44 L 136.64,94.00 L 133.68,90.00 L 131.78,85.00 L 131.39,77.00 L 132.77,71.00 L 135.73,66.00 L 139.00,62.67 L 145.00,58.73 L 150.00,56.64 L 163.00,53.75 L 180.00,53.66 L 180.70,53.00 L 180.19,47.00 L 179.14,44.00 L 175.79,40.00 L 172.00,37.77 L 168.00,36.77 L 157.00,36.82 L 149.00,38.69 L 139.00,42.28 L 138.46,41.00 L 138.45,29.00 L 139.00,27.82 L 145.00,25.61 L 159.00,22.57 L 170.00,22.10 L 180.00,23.50 L 186.00,25.65 L 192.00,29.64 L 196.50,35.00 L 199.33,41.00 L 200.37,45.00 L 201.10,53.00 L 201.05,99.00 L 200.00,99.51 L 182.00,99.50 L 181.30,98.00 L 181.05,90.00 L 180.00,89.45 L 175.89,94.00 L 171.00,97.52 L 165.00,100.12 L 160.00,101.09 Z M 437.00,101.01 L 429.00,101.41 L 419.00,100.44 L 412.00,98.45 L 407.00,96.15 L 402.00,92.58 L 396.81,87.00 L 393.83,82.00 L 390.79,73.00 L 389.73,65.00 L 389.83,57.00 L 390.73,51.00 L 393.88,42.00 L 397.59,36.00 L 404.00,29.63 L 411.00,25.58 L 417.00,23.55 L 423.00,22.55 L 433.00,22.59 L 439.00,23.80 L 446.00,26.73 L 451.00,30.68 L 455.27,36.00 L 459.39,46.00 L 461.30,59.00 L 461.32,66.00 L 460.79,67.00 L 412.00,67.25 L 411.17,68.00 L 412.63,75.00 L 414.86,79.00 L 418.00,82.25 L 423.00,85.26 L 430.00,87.09 L 439.00,87.14 L 447.00,86.18 L 457.11,84.00 L 457.58,96.00 L 457.00,96.88 L 450.00,99.29 L 437.00,101.01 Z M 515.00,101.02 L 507.00,101.29 L 500.00,100.39 L 493.00,98.32 L 487.00,95.32 L 480.48,90.00 L 475.83,84.00 L 472.58,77.00 L 470.74,70.00 L 470.36,59.00 L 470.89,53.00 L 472.63,47.00 L 476.76,39.00 L 481.00,33.89 L 489.00,27.83 L 496.00,24.71 L 506.00,22.57 L 521.00,23.05 L 531.00,25.59 L 532.39,27.00 L 531.85,40.00 L 531.00,40.55 L 524.00,37.77 L 519.00,36.81 L 513.00,36.80 L 508.00,37.74 L 503.00,39.78 L 498.82,43.00 L 495.79,47.00 L 493.65,52.00 L 492.62,57.00 L 492.53,63.00 L 493.78,71.00 L 496.55,77.00 L 501.00,82.15 L 506.00,85.12 L 511.00,86.50 L 520.00,86.55 L 531.00,84.01 L 531.90,85.00 L 532.47,96.00 L 532.00,97.12 L 525.00,99.41 L 515.00,101.02 Z M 570.00,101.16 L 564.00,101.23 L 558.00,100.23 L 551.00,97.32 L 546.85,94.00 L 543.96,90.00 L 541.85,84.00 L 541.49,78.00 L 542.63,72.00 L 544.56,68.00 L 549.00,62.86 L 555.00,58.88 L 560.00,56.70 L 573.00,53.78 L 591.00,53.27 L 590.14,46.00 L 588.04,42.00 L 586.00,39.92 L 582.00,37.72 L 578.00,36.75 L 567.00,36.90 L 562.00,37.85 L 549.00,42.09 L 548.70,29.00 L 550.00,27.51 L 555.00,25.68 L 569.00,22.60 L 580.00,22.11 L 591.00,23.68 L 598.00,26.60 L 603.60,31.00 L 607.35,36.00 L 610.37,44.00 L 611.40,54.00 L 611.36,99.00 L 610.00,99.51 L 592.00,99.44 L 591.00,89.33 L 590.00,89.73 L 586.00,94.17 L 580.00,98.26 L 575.00,100.21 L 570.00,101.16 Z M 656.00,101.01 L 652.00,101.41 L 646.00,100.84 L 638.00,98.28 L 632.65,94.00 L 628.57,87.00 L 626.99,81.00 L 626.44,75.00 L 626.42,25.00 L 626.92,24.00 L 646.00,23.90 L 647.00,24.02 L 647.53,25.00 L 647.73,75.00 L 649.77,81.00 L 652.00,83.54 L 655.00,85.27 L 660.00,86.15 L 665.00,85.14 L 669.00,82.58 L 672.35,78.00 L 674.20,72.00 L 674.55,25.00 L 675.00,24.07 L 695.00,23.91 L 695.67,25.00 L 695.65,88.00 L 696.40,99.00 L 695.00,99.51 L 677.00,99.42 L 676.00,88.55 L 671.26,94.00 L 667.00,97.33 L 660.00,100.33 L 656.00,101.01 Z M 783.00,99.50 L 761.00,99.43 L 745.00,70.75 L 744.00,71.08 L 728.00,99.12 L 707.00,99.52 L 706.21,99.00 L 731.29,60.00 L 708.83,25.00 L 708.94,24.00 L 731.00,24.07 L 744.86,49.00 L 746.00,50.02 L 760.00,23.99 L 780.61,24.00 L 780.90,25.00 L 780.32,26.00 L 758.93,60.00 L 783.18,98.00 L 783.46,99.00 L 783.00,99.50 Z M 441.99,55.00 L 441.43,49.00 L 440.34,45.00 L 438.36,41.00 L 434.00,36.75 L 431.00,35.57 L 428.00,35.32 L 424.00,35.51 L 421.00,36.60 L 415.81,41.00 L 412.64,47.00 L 411.17,55.00 L 412.00,55.71 L 441.00,55.71 L 441.99,55.00 Z M 165.54,88.00 L 169.00,87.24 L 173.00,85.13 L 176.25,82.00 L 178.20,79.00 L 180.44,72.00 L 180.69,65.00 L 180.00,63.46 L 170.00,63.70 L 161.00,65.68 L 157.00,67.66 L 152.79,72.00 L 151.63,75.00 L 151.56,80.00 L 153.51,84.00 L 158.00,87.15 L 162.00,88.11 L 165.54,88.00 Z M 575.88,88.00 L 579.00,87.30 L 583.00,85.29 L 587.20,81.00 L 590.25,74.00 L 591.12,68.00 L 591.00,63.90 L 590.00,63.44 L 581.00,63.64 L 574.00,64.83 L 567.00,67.81 L 563.65,71.00 L 561.89,75.00 L 561.64,78.00 L 561.72,80.00 L 563.71,84.00 L 566.01,86.00 L 569.00,87.39 L 572.00,88.08 L 575.88,88.00 Z" />
+</symbol>
+<symbol id="mi-clp" viewBox="245.10 310.60 33.60 33.60" fill="currentColor"><rect  x="247.9" y="336.4" width="28" height="1"/><rect  x="257.7" y="320.1" width="8.4" height="10.9"/><path  d="M256.3,334.3h11.3v-16h-11.3v16ZM268.4,335.2h-13.1v-17.8h13.1v17.8Z"/></symbol>
+<symbol id="mi-clb" viewBox="147.80 309.70 33.60 33.60" fill="currentColor"><rect  x="150.6" y="336.6" width="28" height="1"/><path  d="M173,327.3h-16.8v-11h16.8v11ZM173.9,315.4h-18.5v12.7h8.8v7.2h.9v-7.2h8.8v-12.7Z"/><rect  x="157.6" y="317.8" width="14" height="8"/></symbol>
+<symbol id="mi-cls" viewBox="41.70 92.40 33.60 33.60" fill="currentColor"><rect  x="44.5" y="120.1" width="28" height="1"/><path  d="M55.1,118.1c.5,0,1.6.2,3.1.2s2.9-.1,3.6-.2v-18.1h.3c.7-.4.8-.6.8-.6,0-.3-1.9-1.2-4.5-1.2s-4.4.8-4.5,1.2c0,0,.1.2.8.4h.3v18.3ZM58.2,119.2c-2.3,0-3.6-.2-3.7-.2h-.4v-18.4c-.7-.3-1.1-.7-1.1-1.2,0-1.3,2.8-2.1,5.4-2.1s5.4.8,5.4,2.1-.4.9-1.1,1.2v18.3h-.4c0,0-1.9.3-4.1.3"/><path  d="M58.5,101.2c-1.4,0-2.4.5-2.4.5v14.1h4.8v-14.1s-1-.5-2.4-.5"/></symbol>
+<symbol id="mi-dclp" viewBox="142.00 191.70 33.60 33.60" fill="currentColor"><rect  x="144.8" y="218.7" width="28" height="1"/><polygon  points="161.6 209.1 161.6 209.1 158.8 209.1 158.8 211.2 160.9 211.2 160.9 211.2 160.9 213.3 163 213.3 163 211.2 163 210.4 163 209.1 161.6 209.1"/><path  d="M165.3,217.5h-13.2v-20.2h13.2v20.2ZM153,216.6h11.4v-18.4h-11.4v18.4Z"/><rect  x="156.7" y="211.2" width="2.1" height="2.1" transform="translate(-54.5 370) rotate(-90)"/><polygon  points="158.8 206.9 156.7 206.9 156.7 206.9 156.7 204.8 154.5 204.8 154.5 206.9 154.5 207.7 154.5 208.3 154.5 209.1 154.5 211.2 156.7 211.2 156.7 209.1 158.8 209.1 158.8 206.9"/><rect  x="154.5" y="200.6" width="2.1" height="2.1" transform="translate(-46 357.2) rotate(-90)"/><rect  x="156.7" y="202.7" width="2.1" height="2.1" transform="translate(-46 361.5) rotate(-90)"/><rect  x="158.8" y="200.6" width="2.1" height="2.1" transform="translate(-41.8 361.5) rotate(-90)"/><polygon  points="160.9 202.7 160.9 204.8 158.8 204.8 158.8 206.9 160.2 206.9 160.2 206.9 163 206.9 163 205.6 163 204.8 163 202.7 160.9 202.7"/><rect  x="144.8" y="218.7" width="28" height="1"/></symbol>
+<symbol id="mi-dclb" viewBox="47.40 310.40 33.60 33.60" fill="currentColor"><rect  x="50.2" y="337.3" width="28" height="1"/><path  d="M72.5,327.9h-16.8v-11h16.8v11ZM73.4,316.1h-18.5v12.7h8.8v7.2h.9v-7.2h8.8v-12.7Z"/><rect  x="59.1" y="318.5" width="2" height="2"/><rect  x="57.1" y="320.5" width="2" height="2"/><rect  x="59.1" y="324.5" width="2" height="2"/><rect  x="59.1" y="322.5" width="2" height="2"/><rect  x="57.1" y="324.5" width="2" height="2"/><rect  x="61.1" y="318.5" width="2" height="2"/><rect  x="63.2" y="318.5" width="2" height="2"/><rect  x="61.1" y="320.5" width="2" height="2"/><rect  x="63.2" y="324.5" width="2" height="2"/><rect  x="63.2" y="322.5" width="2" height="2"/><rect  x="67.2" y="318.5" width="2" height="2"/><rect  x="65.2" y="320.5" width="2" height="2"/><rect  x="67.2" y="322.5" width="2" height="2"/><rect  x="69.2" y="320.5" width="2" height="2"/><rect  x="69.2" y="318.5" width="2" height="2"/><rect  x="69.2" y="324.5" width="2" height="2"/><rect  x="65.2" y="324.5" width="2" height="2"/></symbol>
+<symbol id="mi-mb" viewBox="343.90 93.70 33.60 33.60" fill="currentColor"><rect  x="346.7" y="120" width="28" height="1"/><path  d="M350.6,115.9h20.1v-15h-20.1v15ZM371.6,116.8h-21.9v-16.8h21.9v16.8Z"/><polygon  points="360.7 102.1 352 102.1 352 114.6 360.7 114.6 360.7 114.6 369.4 114.6 369.4 102.1 360.7 102.1 360.7 102.1"/></symbol>
+</svg>
+
+<!-- ═══════════════ EINSTIEG ═══════════════ -->
+
+<!-- ═══════════════ ANWENDUNG ═══════════════ -->
+<div id="app">
+
+  <div class="topbar">
+    <button class="logo logo-sm" id="backHome" title="Zurück zum Start" aria-label="WallDecaux Standortfinder – zurück zum Start"><svg viewBox="0 0 2020 106"><use href="#wd-logo-so"/></svg></button>
+
+    <button class="chip" id="chipPlace" aria-expanded="false">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 21s7-6.2 7-11a7 7 0 10-14 0c0 4.8 7 11 7 11z"/><circle cx="12" cy="10" r="2.2"/></svg>
+      <b id="chipPlaceLabel">Stadt auswählen</b>
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
+    </button>
+
+    <button class="chip" id="chipMedia" aria-expanded="false" hidden>
+      <b id="chipMediaLabel">Werbeträger auswählen</b>
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
+    </button>
+
+    <button class="chip" id="chipReset" hidden title="Auswahl zurücksetzen">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M3.5 12a8.5 8.5 0 108.5-8.5c-2.6 0-4.9 1.2-6.4 3"/><path d="M4 3v5h5"/></svg>
+      <b>Zurücksetzen</b>
+    </button>
+
+    <button class="chip" id="chipRadius" aria-expanded="false" hidden>
+      <b id="chipRadiusLabel">Umkreis 500 m</b>
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
+    </button>
+
+    <button class="chip only-compact" id="chipOrigin" hidden>
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 20V9l8-5 8 5v11"/><path d="M9 20v-6h6v6"/></svg>
+      <b>Ausgangspunkt</b>
+    </button>
+
+    <span class="spacer"></span>
+
+    <a class="cta-link" href="https://www.walldecaux.de/ansprechpartner" target="_blank" rel="noopener">KONTAKT</a>
+
+    <button class="nav-link" id="burger" aria-expanded="false" aria-haspopup="menu" aria-label="Menü">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+    </button>
+  </div>
+
+  <div class="stage">
+    <div id="mapRoot"></div>
+
+    <!-- Ausgangspunkt -->
+    <aside class="panel-left" hidden>
+      <header>
+        <div style="flex:1">
+          <h2>Suche eingrenzen</h2>
+          <p class="panel-hint">Optional. Ohne Eingrenzung sehen Sie alle Flächen in der ausgewählten Stadt.</p>
+        </div>
+        <button class="icon-btn only-compact" id="closeOrigin" aria-label="Schließen">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 5l14 14M19 5L5 19"/></svg>
+        </button>
+      </header>
+      <div class="panel-scroll">
+        <div class="origin-list" id="originList">
+          <button class="origin" data-origin="address" aria-pressed="false">
+            <span class="origin-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 20V9l8-5 8 5v11"/><path d="M9 20v-6h6v6"/></svg></span>
+            <span><strong>Mein Standort</strong><em>Geben Sie Ihre Adresse ein</em></span>
+          </button>
+          <button class="origin" data-origin="branches" aria-pressed="false">
+            <span class="origin-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 9l1.5-5h15L21 9"/><path d="M4.5 9v11h15V9"/><path d="M3 9a2.5 2.5 0 005 0 2.5 2.5 0 005 0 2.5 2.5 0 005 0 2.5 2.5 0 003 0"/></svg></span>
+            <span><strong>POI Suche</strong><em>Sehenswürdigkeit oder Filiale suchen</em></span>
+          </button>
+          <button class="origin" data-origin="event" aria-pressed="false">
+            <span class="origin-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5 21V4M5 4l11 3-11 3"/><circle cx="18" cy="17" r="3"/></svg></span>
+            <span><strong>Strecke hochladen</strong><em>Eigene Wegstrecke oder Vorlage nutzen</em></span>
+          </button>
+          <button class="origin" data-origin="line" aria-pressed="false">
+            <span class="origin-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="6" y="3" width="12" height="14" rx="2.5"/><path d="M6 9h12M9 21l1.5-4M15 21l-1.5-4"/><circle cx="9.5" cy="13.5" r=".9" fill="currentColor"/><circle cx="14.5" cy="13.5" r=".9" fill="currentColor"/></svg></span>
+            <span><strong>Eine ÖPNV-Linie</strong><em>Werben Sie entlang von U-, S-Bahn, Tram, Bus</em></span>
+          </button>
+          <button class="origin" data-origin="draw" aria-pressed="false">
+            <span class="origin-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5 8l7-4 7 5-3 8-9 1z"/></svg></span>
+            <span><strong>Eigenes Gebiet</strong><em>Zeichen Sie Ihr Wunschgegbiet</em></span>
+          </button>
+        </div>
+        <div class="origin-config" id="originConfig"></div>
+        <div class="origin-clear">
+          <button class="btn ghost wide" id="originClear" hidden>Eingrenzung aufheben</button>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Einstieg links, Ergebnisse rechts -->
+    <aside class="panel-right" id="panelIntro">
+      <div class="sheet-grip" aria-hidden="true"></div>
+      <div class="intro-panel">
+        <p class="intro-lead">Wo wollen Sie Ihre Zielgruppen erreichen? Wählen Sie Ihre Stadt aus unserem Portfolio, filtern Sie mit verschiedenen Parametern und stellen Sie sich Ihre Werbestandorte zusammen — auch über mehrere Städte hinweg.</p>
+        <p class="intro-label">Aktuell Verfügbare Städte</p>
+        <div class="intro-cities" id="introCities"></div>
+        <div class="legal-inline legal-inline--dark"></div>
+      </div>
+    </aside>
+
+    <aside class="panel-right" id="panelResults" hidden>
+      <div class="sheet-grip" aria-hidden="true"></div>
+      <header>
+        <h2 id="resultTitle" aria-live="polite">Werbeflächen</h2>
+        <button class="btn ghost small" id="addAll" hidden></button>
+      </header>
+      <p class="other-cities" id="otherCities" hidden></p>
+      <div class="result-list" id="resultList"></div>
+      <div class="legal-inline"></div>
+    </aside>
+
+    <!-- Dock -->
+    <!-- Pflichtangaben: schwebende Leiste am Desktop,
+         am unteren Ende der Sheet-Inhalte auf dem Telefon -->
+    <footer class="legal-bar" id="legalBar"></footer>
+
+    <div class="dock is-idle" id="dock">
+      <span class="dock-count" id="dockCount" aria-live="polite"></span>
+      <button class="btn ghost" id="openDrawer">Meine Auswahl anzeigen</button>
+      <button class="btn cta" id="btnRequest">Angebot anfragen</button>
+    </div>
+
+    <!-- Auswahl-Schublade -->
+    <aside class="drawer" id="drawer" aria-hidden="true">
+      <header>
+        <h2>Meine Auswahl</h2>
+        <button class="icon-btn" id="clearAll" title="Auswahl leeren" aria-label="Auswahl leeren">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7h16M9 7V5h6v2M6 7l1 13h10l1-13"/></svg>
+        </button>
+        <button class="icon-btn" id="closeDrawer" aria-label="Schließen">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 5l14 14M19 5L5 19"/></svg>
+        </button>
+      </header>
+      <div class="drawer-body" id="drawerBody"></div>
+      <div class="drawer-foot">
+        <div class="drawer-actions">
+          <button class="btn ghost" id="btnShare">Teilen</button>
+          <button class="btn ghost" id="btnExport">Export</button>
+        </div>
+        <button class="btn cta wide" id="drawerRequest">Angebot anfragen</button>
+      </div>
+    </aside>
+  </div>
+</div>
+
+<input type="file" id="fileInput" accept=".xlsx,.xls,.csv" hidden>
+<input type="file" id="listInput" accept=".csv,.xlsx,.xls" hidden>
+<input type="file" id="gpxInput" accept=".gpx,.geojson,.json" hidden>
+
+<script>
+/* ══════════════════════════════════════════════════════════════════════════
+   KONFIGURATION
+   ══════════════════════════════════════════════════════════════════════════ */
+const CSSVAR = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+
+const FIELD_LABELS = {
+  sid:'Standort Nr.', qid:'QID', pps:'PPS', medium:'Werbeträger',
+  wirkrichtung:'Wirkungsrichtung', panels:'Anzahl der Flächen',
+  preis:'Preis pro Tag', standort:'Jeweiliger Standort', stadt:'Stadt',
+  lng:'Längengrad', lat:'Breitengrad'
+};
+const REQUIRED_FIELDS = ['lat','lng'];
+
+const COLUMN_ALIASES = {
+  sid:['sid','standortnr','standortnummer','standortid'],
+  qid:['qid'],
+  pps:['pps'],
+  standort:['sitedescription','standortbeschreibung','jeweiligerstandort','standort','beschreibung','adresse','address','strasse'],
+  stadt:['city','stadt','ort'],
+  medium:['medianame','medium','werbetrager','werbetraeger','produkt','werbetragername'],
+  wirkrichtung:['direction','wirkungsrichtung','wirkrichtung','blickrichtung','richtung','ausrichtung'],
+  panels:['panelnumber','anzahlderflachen','anzahlflachen','anzahlflaechen','anzahl','flachen','flaechen','panels'],
+  preis:['price','preisprotag','tagespreis','preis'],
+  lat:['latitude','breitengrad','lat','breite','ykoordinate','ycoord'],
+  lng:['longitude','langengrad','laengengrad','lng','lon','lange','laenge','xkoordinate','xcoord']
+};
+const COLUMN_HINTS = {
+  lat:['breit','latit'], lng:['lang','laeng','longit'],
+  sid:['standortnr','standortid','standortnummer'], qid:['qid'], pps:['pps'],
+  standort:['sitedescr','standortbeschr','beschreib','adress','strass'],
+  stadt:['stadt','city','ort'],
+  medium:['media','medium','werbetr','produkt'],
+  wirkrichtung:['direction','richt','blickricht','ausricht'],
+  panels:['panel','anzahl','flach','flaech'],
+  preis:['price','preis','tagespreis']
+};
+
+const norm = s => String(s ?? '').toLowerCase()
+  .replace(/ß/g,'ss').replace(/[äàá]/g,'a').replace(/[öòó]/g,'o').replace(/[üùú]/g,'u')
+  .replace(/[^a-z0-9]/g,'');
+
+/* Beispielstrecke: Berlin-Marathon, grob nachgezeichnet (Platzhalter) */
+/* Originalstrecke des Berlin-Marathons aus der GPX-Datei des Veranstalters,
+   von 508 auf 188 Punkte reduziert — die Abweichung liegt unter drei
+   Metern und ist auf keiner Zoomstufe sichtbar. */
+const EVENTS = {
+  'berlin-marathon':{
+    name:'Berlin-Marathon (Originalstrecke)', city:'Berlin',
+    path:[
+      [52.51521,13.36020],[52.51472,13.35199],[52.51473,13.35175],[52.51504,13.35034],[52.51506,13.35002],[52.51498,13.34964],
+      [52.51454,13.34853],[52.51437,13.34685],[52.51372,13.33775],[52.51283,13.32388],[52.51283,13.32331],[52.51288,13.32306],
+      [52.51316,13.32267],[52.51329,13.32263],[52.51449,13.32258],[52.51501,13.32283],[52.51851,13.32585],[52.52207,13.32860],
+      [52.52232,13.32870],[52.52302,13.32975],[52.52363,13.32995],[52.52372,13.33003],[52.52481,13.33569],[52.52572,13.33951],
+      [52.52572,13.33975],[52.52489,13.34683],[52.52447,13.34975],[52.52331,13.35914],[52.52269,13.36443],[52.52243,13.36694],
+      [52.52243,13.36759],[52.52222,13.36814],[52.52095,13.37063],[52.52093,13.37364],[52.52096,13.37379],[52.52172,13.37549],
+      [52.52201,13.37634],[52.52390,13.38749],[52.52397,13.38753],[52.52502,13.38738],[52.52702,13.38721],[52.52709,13.38725],
+      [52.52761,13.38950],[52.52855,13.39397],[52.52935,13.39744],[52.52970,13.40357],[52.52915,13.40697],[52.52836,13.41120],
+      [52.52748,13.41432],[52.52662,13.41601],[52.52519,13.41936],[52.52512,13.41944],[52.52396,13.41829],[52.52272,13.41693],
+      [52.52224,13.41661],[52.52207,13.41689],[52.51938,13.42563],[52.51900,13.42712],[52.51884,13.42854],[52.51868,13.42887],
+      [52.51852,13.42899],[52.51837,13.42897],[52.51827,13.42884],[52.51810,13.42790],[52.51708,13.42722],[52.51605,13.42640],
+      [52.51229,13.42301],[52.50988,13.42117],[52.50987,13.42102],[52.51090,13.41669],[52.51091,13.41654],[52.51088,13.41647],
+      [52.50428,13.41115],[52.50400,13.41091],[52.50374,13.41043],[52.50339,13.41039],[52.50178,13.40940],[52.50117,13.41125],
+      [52.49925,13.41774],[52.49890,13.41793],[52.49869,13.41844],[52.49663,13.41956],[52.49330,13.42180],[52.48820,13.42493],
+      [52.48797,13.42502],[52.48769,13.42500],[52.48665,13.42413],[52.48661,13.42386],[52.48729,13.42131],[52.48877,13.40999],
+      [52.48905,13.40810],[52.48945,13.40658],[52.48961,13.40493],[52.49273,13.38923],[52.49374,13.38373],[52.49372,13.38327],
+      [52.49162,13.37648],[52.49340,13.36731],[52.49402,13.36367],[52.49437,13.36125],[52.49429,13.36104],[52.49421,13.36098],
+      [52.49134,13.36071],[52.49094,13.36054],[52.49057,13.36017],[52.49054,13.35962],[52.48913,13.34525],[52.48904,13.34505],
+      [52.48895,13.34497],[52.48770,13.34496],[52.48385,13.34502],[52.47930,13.34485],[52.47231,13.33607],[52.46912,13.33257],
+      [52.46919,13.33229],[52.47122,13.32904],[52.47124,13.32825],[52.47150,13.32761],[52.47160,13.31943],[52.47059,13.31754],
+      [52.46946,13.31496],[52.46779,13.31006],[52.46758,13.30922],[52.46781,13.30878],[52.46829,13.30810],[52.46813,13.30758],
+      [52.46773,13.30659],[52.46772,13.30617],[52.46899,13.29830],[52.47042,13.29069],[52.47057,13.29006],[52.47070,13.28967],
+      [52.47076,13.28926],[52.47540,13.28297],[52.47676,13.28126],[52.47689,13.28125],[52.47841,13.28354],[52.47966,13.28556],
+      [52.48671,13.29849],[52.48816,13.30132],[52.48828,13.30200],[52.48823,13.30644],[52.48833,13.30719],[52.49041,13.31378],
+      [52.49050,13.31378],[52.49310,13.31054],[52.49344,13.31020],[52.49535,13.31090],[52.50054,13.31330],[52.50242,13.32514],
+      [52.50427,13.33394],[52.50440,13.33471],[52.50439,13.33513],[52.50432,13.33583],[52.50422,13.33624],[52.50171,13.34253],
+      [52.50161,13.34287],[52.50147,13.34418],[52.50110,13.34615],[52.50111,13.34658],[52.50012,13.35164],[52.49988,13.35375],
+      [52.49939,13.35538],[52.49803,13.36187],[52.49806,13.36197],[52.49989,13.36299],[52.50358,13.36619],[52.50525,13.36791],
+      [52.50567,13.36823],[52.50829,13.36980],[52.50845,13.36998],[52.50890,13.37088],[52.50896,13.37121],[52.50971,13.37938],
+      [52.51054,13.39170],[52.51071,13.39292],[52.51103,13.39652],[52.51110,13.39663],[52.51247,13.39641],[52.51239,13.39353],
+      [52.51493,13.39297],[52.51464,13.38635],[52.51468,13.38627],[52.51654,13.38576],[52.51660,13.38565],[52.51633,13.37964],
+      [52.51630,13.37782],[52.51601,13.37255]
+    ]
+  }
+};
+
+
+/* Werbeträger-Icons: Zuordnung über Schlüsselwörter im Namen,
+   damit auch Kürzel wie FlexCLS oder FlexDCLB erkannt werden.
+   Reihenfolge ist wichtig — digital vor analog, Kürzel vor Gattung. */
+const MEDIA_ICON_RULES = [
+  [/dclp|digital.*poster|poster.*digital/, 'dclp'],
+  [/dclb|digital.*board|board.*digital/,   'dclb'],
+  [/metro/,                                 'mb'  ],
+  [/cls|saule|saeule/,                      'cls' ],
+  [/clb|board/,                             'clb' ],
+  [/clp|poster|plakat|grossflache/,         'clp' ]
+];
+/* Werbeträgername auf ein Symbol abbilden. */
+function iconFor(medium){
+  const n = norm(medium);
+  for(const [re_, id] of MEDIA_ICON_RULES) if(re_.test(n)) return id;
+  return 'clp';
+}
+const mediaSvg = (medium, size) =>
+  `<svg width="${size}" height="${size}" aria-hidden="true"><use href="#mi-${iconFor(medium)}"/></svg>`;
+
+/* Das Symbol aus dem Sprite einmal in eine Bilddatei umwandeln.
+   Quelle bleibt dasselbe <symbol>, es gibt also keine zweite Fassung. */
+const uriCache = new Map();
+function iconDataURI(id, farbe){
+  const key = id + '|' + farbe;
+  if(!uriCache.has(key)){
+    const sym = document.getElementById('mi-' + id);
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${sym.getAttribute('viewBox')}" `
+              + `fill="${farbe}">${sym.innerHTML}</svg>`;
+    uriCache.set(key, 'data:image/svg+xml,' + encodeURIComponent(svg));
+  }
+  return uriCache.get(key);
+}
+
+const iconCache = new Map();
+/* Kartenmarker je Werbeträger und Zustand, einmal gebaut und gemerkt. */
+function markerIcon(medium, state){
+  const key = medium + '|' + state;
+  if(!iconCache.has(key)){
+    const farbe = state === 'sel' ? '#ffffff' : (S.colorOf[medium] || CSSVAR('--blue'));
+    iconCache.set(key, L.divIcon({
+      className:'',
+      html:`<span class="mk ${state}" style="background-image:url(&quot;${iconDataURI(iconFor(medium), farbe)}&quot;)"></span>`,
+      iconSize:[32,32], iconAnchor:[16,16], popupAnchor:[0,-16]
+    }));
+  }
+  return iconCache.get(key);
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   ZUSTAND
+   ══════════════════════════════════════════════════════════════════════════ */
+const S = {
+  rows:[], sites:[], colorOf:{},
+  media:[], activeMedia:new Set(),
+  city:'',
+  origin:null,              // {type, label, points:[[lat,lng]], path:[[lat,lng]], polygon:[[lat,lng]]}
+  radius:500,
+  selection:new Map(),
+  markers:new Map(),
+  results:[]
+};
+const LAST = { raw:[], headers:[], filename:'', mapping:{} };
+/* Aufgeklappte Standorte in der Auswahl-Schublade (überlebt das Neuzeichnen). */
+const drawerOpen = new Set();
+
+const $  = s => document.querySelector(s);
+const $$ = s => [...document.querySelectorAll(s)];
+const esc = s => String(s ?? '').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const euro = n => n == null ? null : n.toLocaleString('de-DE',{style:'currency',currency:'EUR',minimumFractionDigits:2});
+/* Ein- und Mehrzahl, damit nirgends „1 Flächen" steht */
+const plural = (n, ein, viele) => `${n} ${n === 1 ? ein : viele}`;
+/* Städte der Auswahl — nicht die gerade geöffnete Stadt. Wer über mehrere
+   Städte hinweg auswählt, soll auch alle in der Anfrage wiederfinden. */
+const selectedCities = () => [...new Set([...S.selection.values()].map(e=>e.site.stadt))]
+  .filter(Boolean).sort((a,b)=>a.localeCompare(b,'de'));
+
+/* Kurze Rückmeldung am unteren Rand. Ein bereits sichtbarer Hinweis wird
+   ersetzt, nicht gestapelt. */
+let toastTimer;
+function toast(msg, ms=3200){
+  let t = $('.toast');
+  if(!t){ t = document.createElement('div'); t.className='toast'; document.body.appendChild(t); }
+  t.textContent = msg;
+  clearTimeout(toastTimer); toastTimer = setTimeout(()=>t.remove(), ms);
+}
+
+/* Zahlen aus der Tabelle lesen. Deutsche Schreibweise mit Komma und
+   Tausenderpunkt wird ebenso erkannt wie die englische. */
+function num(v){
+  if(typeof v === 'number') return v;
+  const s = String(v ?? '').replace(/[^\d,.\-]/g,'');
+  if(!s) return null;
+  const n = parseFloat(s.includes(',') && s.lastIndexOf(',') > s.lastIndexOf('.') ? s.replace(/\./g,'').replace(',','.') : s.replace(/,/g,''));
+  return Number.isFinite(n) ? n : null;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   KARTE
+   Hinweis: Der Kartenanbieter ist bewusst gekapselt. Für die finale Umsetzung
+   mit Google Maps wird nur dieser Abschnitt ersetzt, die Logik bleibt.
+   ══════════════════════════════════════════════════════════════════════════ */
+const map = L.map('mapRoot',{center:[52.52,13.405],zoom:12,zoomControl:false,preferCanvas:true,renderer:L.canvas({padding:.5})});
+
+/* Esri „World Light Gray Canvas", kein Schlüssel nötig. Der Stil besteht aus
+   zwei Ebenen: Die Grundkarte ist komplett unbeschriftet, Straßennamen und
+   Grenzen liegen als eigene Ebene darüber.
+   maxNativeZoom:16, weil Esri für diesen Stil ab Stufe 17 keine echten
+   Kacheln mehr ausliefert. maxZoom:19 lässt Leaflet die vorhandenen Kacheln
+   beim tieferen Hineinzoomen hochskalieren, statt eine leere Karte zu zeigen. */
+const ESRI = 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/';
+const kachelOpt = {maxNativeZoom:16, maxZoom:19,
+  attribution:'Kartengrundlage: Esri, HERE, Garmin, &copy; OpenStreetMap-Mitwirkende'};
+
+L.tileLayer(ESRI + 'World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}', kachelOpt).addTo(map);
+L.tileLayer(ESRI + 'World_Light_Gray_Reference/MapServer/tile/{z}/{y}/{x}',
+  {...kachelOpt, attribution:'', pane:'overlayPane'}).addTo(map);
+L.control.zoom({position:'bottomright'}).addTo(map);
+
+const layerSites  = L.layerGroup().addTo(map);
+const layerOrigin = L.layerGroup().addTo(map);
+
+/* ══════════════════════════════════════════════════════════════════════════
+   GEOMETRIE
+   ══════════════════════════════════════════════════════════════════════════ */
+const R = 6371000;
+/* Abstand eines Punktes zu einer Strecke in Metern. Für Entfernungen dieser
+   Größenordnung genügt eine ebene Näherung. */
+function segDist(p, a, b){
+  const toXY = ll => [ll[1]*Math.PI/180*Math.cos(p[0]*Math.PI/180)*R, ll[0]*Math.PI/180*R];
+  const [px,py]=toXY(p),[ax,ay]=toXY(a),[bx,by]=toXY(b);
+  const dx=bx-ax, dy=by-ay, l2=dx*dx+dy*dy;
+  let t = l2 ? ((px-ax)*dx+(py-ay)*dy)/l2 : 0;
+  t = Math.max(0, Math.min(1, t));
+  return Math.hypot(px-(ax+t*dx), py-(ay+t*dy));
+}
+/* Kürzester Abstand eines Punktes zu einem Streckenzug, in Metern. */
+function distToPath(p, path){
+  let min = Infinity;
+  for(let i=0;i<path.length-1;i++) min = Math.min(min, segDist(p, path[i], path[i+1]));
+  return min;
+}
+/* Abstand zum nächstgelegenen Punkt einer Punktmenge, in Metern. */
+function distToPoints(p, pts){
+  let min = Infinity;
+  pts.forEach(q => min = Math.min(min, map.distance(p, q)));
+  return min;
+}
+/* Punkt-im-Polygon nach dem Strahlverfahren. */
+function inPolygon(p, ring){
+  let inside=false;
+  for(let i=0,j=ring.length-1;i<ring.length;j=i++){
+    const yi=ring[i][0],xi=ring[i][1],yj=ring[j][0],xj=ring[j][1];
+    if(((yi>p[0])!==(yj>p[0])) && (p[1] < (xj-xi)*(p[0]-yi)/(yj-yi)+xi)) inside=!inside;
+  }
+  return inside;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   DATEN
+   ══════════════════════════════════════════════════════════════════════════ */
+function readFile(file, then){
+  const r = new FileReader();
+  r.onload = e => {
+    try{
+      const wb = XLSX.read(e.target.result,{type:'array'});
+      const raw = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{defval:''});
+      then(raw, file.name);
+    }catch(err){ toast('Die Datei konnte nicht gelesen werden.'); console.error(err); }
+  };
+  r.readAsArrayBuffer(file);
+}
+
+/* Spaltenzuordnung in zwei Durchgängen: erst exakte Treffer auf bekannte
+   Bezeichnungen, dann Teilstring-Treffer für alles, was offen blieb. */
+function detectColumns(headers){
+  const m={};
+  headers.forEach(h=>{ const n=norm(h);
+    for(const [f,al] of Object.entries(COLUMN_ALIASES)){ if(m[f])continue; if(al.includes(n)){m[f]=h;break;} }
+  });
+  headers.forEach(h=>{ const n=norm(h);
+    if(Object.values(m).includes(h)) return;
+    for(const [f,hints] of Object.entries(COLUMN_HINTS)){ if(m[f])continue; if(hints.some(p=>n.includes(p))){m[f]=h;break;} }
+  });
+  return m;
+}
+
+/* Neue Tabelle übernehmen: Kopfzeile merken, Spalten zuordnen, auswerten. */
+function ingest(raw, filename){
+  if(!raw.length){ toast('Das Tabellenblatt ist leer.'); return false; }
+  LAST.raw = raw; LAST.filename = filename;
+  LAST.headers = [...new Set(raw.flatMap(r=>Object.keys(r)))];
+  LAST.mapping = detectColumns(LAST.headers);
+  return applyMapping();
+}
+
+/* Rohzeilen anhand der Spaltenzuordnung in Standorte umwandeln.
+   Wird auch aufgerufen, wenn die Zuordnung von Hand geändert wird. */
+function applyMapping(){
+  const m = LAST.mapping;
+  const missing = REQUIRED_FIELDS.filter(f=>!m[f]);
+  if(missing.length){
+    toast(`${missing.map(f=>FIELD_LABELS[f]).join(' und ')} fehlt. Bitte Spalten zuordnen.`);
+    openDataModal();
+    return false;
+  }
+  const rows=[]; let skipped=0;
+  LAST.raw.forEach((r,i)=>{
+    const lat=num(r[m.lat]), lng=num(r[m.lng]);
+    if(lat===null||lng===null||Math.abs(lat)>90||Math.abs(lng)>180){skipped++;return;}
+    const get=f=>m[f]?String(r[m[f]]??'').trim():'';
+    rows.push({
+      sid:get('sid')||String(i), qid:get('qid'), pps:get('pps'),
+      standort:get('standort'), stadt:get('stadt')||'Ohne Stadt',
+      medium:get('medium')||'Werbefläche', wirkrichtung:get('wirkrichtung'),
+      panels:Math.max(1, Math.round(num(r[m.panels])||1)),
+      preis:num(r[m.preis]), lat, lng
+    });
+  });
+  if(!rows.length){ toast('Keine gültigen Koordinaten gefunden.'); return false; }
+
+  S.rows = rows;
+  const bySid = new Map();
+  rows.forEach(r=>{
+    if(!bySid.has(r.sid)) bySid.set(r.sid,{...r, frames:[]});
+    bySid.get(r.sid).frames.push(r);
+  });
+  S.sites = [...bySid.values()];
+
+  S.media = [...new Set(rows.map(r=>r.medium))].sort((a,b)=>a.localeCompare(b,'de'));
+  S.colorOf = {};
+  // Alle Werbeträger tragen das Corporate-Blau; unterschieden wird über die
+  // Icons. Für farbige Werbeträger hier eine Farbtabelle einsetzen.
+  S.media.forEach(v => S.colorOf[v] = CSSVAR('--blue'));
+  S.activeMedia = new Set(S.media);
+  S.selection.clear();
+  drawerOpen.clear();
+
+  renderCityPicker();
+  if(skipped) toast(`${rows.length} Zeilen geladen, ${skipped} ohne Koordinaten übersprungen.`);
+  return true;
+}
+
+/* Flächen (Panels) eines Standorts über alle seine Belegungen. */
+const panelsOf = site => site.frames.reduce((n,f)=>n+(f.panels||1),0);
+/* Auswahl-Vorlage: jede Belegung mit allen ihren Flächen ausgewählt. */
+const fullSel = site => new Map(site.frames.map((f,i)=>[i, new Set(Array.from({length:f.panels||1},(_,k)=>k))]));
+/* Anzahl ausgewählter Flächen in einem Auswahleintrag. */
+const selCount = entry => [...entry.sel.values()].reduce((n,s)=>n+s.size,0);
+
+const cities = () => [...new Set(S.sites.map(s=>s.stadt))].sort((a,b)=>a.localeCompare(b,'de'));
+/* Standorte der aktuellen Stadt (ohne gewählte Stadt: alle). */
+const citySites = () => S.sites.filter(s => !S.city || s.stadt === S.city);
+/* Werbeträger, die in der aktuellen Stadt vorkommen, alphabetisch. */
+const cityMedia = () => [...new Set(citySites().map(s=>s.medium))].sort((a,b)=>a.localeCompare(b,'de'));
+/* Flächen (Panels) eines Werbeträgers in der aktuellen Stadt. */
+const cityMediaPanels = medium => citySites()
+  .filter(s=>s.medium===medium).reduce((n,s)=>n+panelsOf(s),0);
+/* Umgrenzung aller Standorte einer Stadt — damit beim Aufruf die ganze Stadt
+   ins Bild passt statt fest auf Zoom 12 zu springen. */
+function cityBoundsOf(city){
+  const list = S.sites.filter(s=>s.stadt===city);
+  return list.length ? L.latLngBounds(list.map(s=>[s.lat, s.lng])) : null;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   BEISPIELDATEN
+   ══════════════════════════════════════════════════════════════════════════ */
+function demoRows(){
+  // Platzhalterinventar für alle Portfoliostädte, Menge grob nach Stadtgröße.
+  const orte = {
+    'Berlin':                 [52.5200,13.4050,26], 'Freiburg im Breisgau':[47.9990, 7.8421, 8],
+    'Hamburg':                [53.5511, 9.9937,20], 'Kaiserslautern':      [49.4440, 7.7690, 5],
+    'Karlsruhe':              [49.0069, 8.4037, 9], 'Lübeck':              [53.8655,10.6866, 6],
+    'Ludwigshafen am Rhein':  [49.4770, 8.4450, 6], 'Potsdam':             [52.3960,13.0590, 6],
+    'Reutlingen':             [48.4919, 9.2041, 5], 'Saarbrücken':         [49.2402, 6.9969, 6]
+  };
+  const lagen = [['Zentrum',0,0],['Nord',.028,.004],['Süd',-.026,-.006],['West',.002,-.038],['Ost',-.004,.036]];
+  const media = ['City Light Poster','City Light Board','City Light Säule','Digital City Light Poster','Digital City Light Board','MetroBoard'];
+  const preise = {'City Light Poster':18.90,'City Light Board':94.50,'City Light Säule':24.60,
+                  'Digital City Light Poster':41.20,'Digital City Light Board':132.00,'MetroBoard':55.40};
+  const richtungen = ['Nord','Nordost','Ost','Südost','Süd','Südwest','West','Nordwest'];
+  const strassen = ['Hauptstraße','Bahnhofsplatz','Marktweg','Lindenallee','Am Park','Ringstraße',
+                    'Schulstraße','Alte Chaussee','Kirchweg','Gartenstraße','Rathausplatz','Mühlenweg'];
+  const rows=[]; let sid=21000;
+
+  Object.entries(orte).forEach(([stadt,[lat0,lng0,proLage]])=>{
+    lagen.forEach(([lage,dLat,dLng])=>{
+      for(let i=0;i<proLage;i++){
+        const medium = media[Math.floor(Math.random()*media.length)];
+        const anzahl = medium==='MetroBoard' ? 1+Math.floor(Math.random()*5) : 1+Math.floor(Math.random()*2);
+        sid++;
+        const lat = lat0+dLat+(Math.random()-.5)*.022;
+        const lng = lng0+dLng+(Math.random()-.5)*.034;
+        const adr = `${strassen[Math.floor(Math.random()*strassen.length)]} ${1+Math.floor(Math.random()*180)}, ${lage}`;
+        rows.push({
+          'SID':sid,
+          'QID':'Q'+(sid*7 % 100000),
+          'PPS':200+Math.floor(Math.random()*7800),
+          'Price':preise[medium],
+          'SiteDescription':adr,
+          'Longitude':lng.toFixed(6),
+          'Latitude':lat.toFixed(6),
+          'City':stadt,
+          'MediaName':medium,
+          'Direction':richtungen[Math.floor(Math.random()*richtungen.length)],
+          'PanelNumber':anzahl
+        });
+      }
+    });
+  });
+  return rows;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   EINSTIEG
+   ══════════════════════════════════════════════════════════════════════════ */
+/* Städte-Portfolio mit Koordinaten. Neue Stadt ergänzen genügt —
+   die Position auf der Karte wird berechnet, nicht gepflegt.
+   nudge verschiebt Punkte, die sonst aufeinanderliegen (in Kartenpixeln). */
+/* links:true setzt die Beschriftung auf die andere Seite des Punktes.
+   Nötig, wo Städte auf der Deutschlandansicht so dicht beieinanderliegen,
+   dass sich die Schilder sonst überdecken. */
+const CITIES = [
+  {n:'Berlin',         lat:52.520, lng:13.405},
+  {n:'Freiburg im Breisgau', lat:47.999, lng: 7.842},
+  {n:'Hamburg',        lat:53.551, lng: 9.994},
+  {n:'Kaiserslautern', lat:49.444, lng: 7.769, links:true},
+  {n:'Karlsruhe',      lat:49.007, lng: 8.404},
+  {n:'Lübeck',         lat:53.866, lng:10.687},
+  {n:'Ludwigshafen am Rhein', lat:49.477, lng: 8.445},
+  {n:'Potsdam',        lat:52.396, lng:13.059, links:true},
+  {n:'Reutlingen',     lat:48.492, lng: 9.204},
+  {n:'Saarbrücken',    lat:49.240, lng: 6.997, links:true}
+];
+
+/* ══════════════════════════════════════════════════════════════════════════
+   STÄDTEÜBERSICHT — Deutschlandansicht
+   Zwei Zustände auf einer Karte: weit draußen die Städte, nah dran das
+   Inventar. Der Wechsel läuft über Klick und über die Zoomstufe.
+   ══════════════════════════════════════════════════════════════════════════ */
+const DE_VIEW = {center:[51.15,10.35], zoom:6};
+
+/* Die Deutschlandansicht wird um die halbe Breite des Einstiegspanels nach
+   rechts verschoben, damit sie im freien Teil der Karte mittig wirkt.
+   Die Verschiebung läuft in Pixeln, passt sich also der Panelbreite an und
+   entfällt auf dem Telefon, wo das Panel unten liegt. */
+function deOffset(){
+  if(matchMedia('(max-width:759px)').matches) return 0;
+  const panel = $('#panelIntro');
+  const breite = panel && !panel.hidden ? panel.offsetWidth : 340;
+  return -Math.round(breite / 2);
+}
+/* Deutschlandansicht einnehmen, wahlweise mit Flug. */
+function showGermany(fly){
+  const anwenden = ()=>{ const o = deOffset(); if(o) map.panBy([o,0], {animate:false}); };
+  if(fly){
+    map.flyTo(DE_VIEW.center, DE_VIEW.zoom, {duration:.8});
+    map.once('moveend', anwenden);
+  }else{
+    map.setView(DE_VIEW.center, DE_VIEW.zoom);
+    anwenden();
+  }
+}
+const ZOOM_IN  = 9;   // ab hier Inventar
+const ZOOM_OUT = 8;   // darunter zurück zur Übersicht
+
+const layerCities = L.layerGroup().addTo(map);
+
+/* Anzahl der Standorte einer Stadt im geladenen Bestand. */
+function cityCount(name){ return S.sites.filter(s=>s.stadt===name).length; }
+
+/* Nach jedem Datenwechsel: Übersicht und Städteliste neu aufbauen. */
+function renderCityPicker(){
+  if(!S.city) renderCityOverview();   // in der Stadtansicht würden sie das Inventar überlagern
+  renderIntroPanel();
+}
+
+/* Stadtmarker der Deutschlandansicht. */
+function renderCityOverview(){
+  layerCities.clearLayers();
+  const extra = [...new Set(S.sites.map(s=>s.stadt))].filter(c=>!CITIES.some(x=>x.n===c));
+  const alle = [...CITIES, ...extra.map(n=>{
+    const s = S.sites.find(x=>x.stadt===n);
+    return s ? {n, lat:s.lat, lng:s.lng} : null;
+  }).filter(Boolean)];
+
+  alle.forEach(c=>{
+    const n = cityCount(c.n);
+    const m = L.marker([c.lat,c.lng], {
+      icon: L.divIcon({
+        className:'',
+        html:`<span class="cty ${n?'':'off'} ${c.links?'links':''}">
+                <span class="cty-dot"></span>
+                <span class="cty-name">${esc(c.n)}${n?`<em>${n}</em>`:''}</span>
+              </span>`,
+        iconSize:[null,null], iconAnchor:[7,7]
+      }),
+      // Ohne eigene Angabe stapelt Leaflet nach Breitengrad — die südlichere
+      // Stadt läge oben. Stattdessen entscheidet der Bestand.
+      zIndexOffset: n,
+      keyboard:false, riseOnHover:true, interactive:!!n
+    });
+    if(n) m.on('click', ()=>selectCity(c.n));
+    m.addTo(layerCities);
+  });
+}
+
+/* Städteliste im Einstiegspanel. */
+function renderIntroPanel(){
+  const liste = [...CITIES.map(c=>c.n), ...[...new Set(S.sites.map(s=>s.stadt))].filter(c=>!CITIES.some(x=>x.n===c))];
+  $('#introCities').innerHTML = liste.map(c=>{
+    const n = cityCount(c);
+    return `<button class="intro-city" data-city="${esc(c)}" ${n?'':'disabled'}>${esc(c)}</button>`;
+  }).join('');
+}
+
+$('#introCities').addEventListener('click', e=>{
+  const b = e.target.closest('[data-city]');
+  if(b && !b.disabled) selectCity(b.dataset.city);
+});
+
+/* Stadt wählen und in die Detailansicht wechseln */
+function selectCity(name, opts={}){
+  S.city = name;
+  if(!opts.keepOrigin) clearOrigin();
+  setStage('city');
+  const b = cityBoundsOf(name);
+  if(b && !opts.keepView){
+    // Rand-Abstand grob nach den überlagernden Bedienflächen: Kopfleiste oben,
+    // links das Ausgangspunkt-Panel (nur im Desktop dauerhaft sichtbar), rechts
+    // die Ergebnisliste bzw. unten das Bottom-Sheet auf dem Telefon.
+    const tel = istTelefon(), komp = istKompakt();
+    map.flyToBounds(b, {
+      duration:.9, maxZoom:15,
+      paddingTopLeft:     [tel ? 24 : (komp ? 24 : 328), 100],
+      paddingBottomRight: [tel ? 24 : (komp ? 320 : 362), tel ? 240 : 90]
+    });
+  }
+  $('#chipPlaceLabel').textContent = name;
+  // Der Werbeträgerfilter gilt je Stadt: beim Wechsel auf das dort
+  // vorhandene Inventar zurücksetzen.
+  S.activeMedia = new Set(cityMedia());
+  updateMediaChip();
+  refresh();
+}
+
+/* Zu welcher Stadt gehört ein Punkt? Nächstgelegener Standort im Bestand,
+   höchstens 60 km entfernt — darüber hinaus gibt es dort kein Inventar. */
+function cityForPoint(p){
+  let beste = null;
+  S.sites.forEach(s=>{
+    const d = map.distance(p, [s.lat, s.lng]);
+    if(!beste || d < beste.d) beste = {stadt:s.stadt, d};
+  });
+  return beste && beste.d < 60000 ? beste.stadt : null;
+}
+
+/* Liegt der gewählte Ausgangspunkt in einer anderen Stadt, wird dorthin
+   gewechselt — sonst filtert im Hintergrund weiter die alte Stadt und die
+   Ergebnisliste bleibt leer. Das Werkzeugpanel bleibt dabei geöffnet. */
+function ensureCityFor(p){
+  const stadt = cityForPoint(p);
+  if(stadt && stadt !== S.city){
+    selectCity(stadt, {keepView:true, keepOrigin:true});
+    toast(`Ansicht auf ${stadt} gewechselt.`);
+    return true;
+  }
+  if(!stadt) toast('An dieser Adresse gibt es kein Inventar.');
+  return false;
+}
+
+/* Ausgangspunkt samt Werkzeugpanel leeren. Wird an mehreren Stellen
+   gebraucht, deshalb hier einmal. Die getroffene Auswahl bleibt bestehen. */
+function clearOrigin(){
+  setOrigin(null);                 // Karte, Umkreis-Chip und Aufheben-Knopf
+  activeOrigin = null;
+  $('#originConfig').innerHTML = '';
+  $$('.origin').forEach(o=>o.setAttribute('aria-pressed','false'));
+}
+
+/* Zurück auf die Deutschlandansicht. Die Auswahl bleibt erhalten. */
+function backToGermany(opts={}){
+  S.city = '';
+  clearOrigin();
+  setStage('de');
+  $('#chipPlaceLabel').textContent = 'Stadt auswählen';
+  if(!opts.keepView) showGermany(true);
+  refresh();
+}
+
+/* Auswahl, Filter und Ausgangspunkt leeren. Bleibt die Stadt erhalten,
+   landet man in ihrer Übersicht — sonst auf der Deutschlandkarte.
+   Das Logo setzt komplett zurück, der Chip nur innerhalb der Stadt. */
+function resetAll({keepCity=false}={}){
+  closePop();
+  S.selection.clear();
+  drawerOpen.clear();
+  S.activeMedia = new Set(cityMedia());
+  S.radius = 500;
+  $('#chipRadiusLabel').textContent = 'Umkreis 500 m';
+  updateMediaChip();
+  $('#drawer').classList.remove('open');
+  $('#drawer').setAttribute('aria-hidden','true');
+
+  if(keepCity && S.city) selectCity(S.city);
+  else                    backToGermany();
+}
+$('#backHome').addEventListener('click', ()=> bestaetigen({
+  titel:'Von vorn beginnen',
+  text:'Auswahl, Filter und Eingrenzung werden zurückgesetzt und Sie landen wieder auf der Deutschlandkarte.',
+  dann:()=> resetAll()
+}));
+
+/* Sicherheitsabfrage vor dem Zurücksetzen */
+/* Sicherheitsabfrage vor jedem Schritt, der eine getroffene Auswahl
+   verwirft. Ohne Auswahl entfällt sie — dann gibt es nichts zu verlieren. */
+function bestaetigen({titel, text, dann}){
+  closePop();
+  if(!S.selection.size){ dann(); return; }
+  modal(`
+    <header><div><h2>${esc(titel)}</h2></div></header>
+    <div class="modal-body">
+      <p style="margin:0;font-size:var(--t-body)">${text}</p>
+    </div>
+    <div class="modal-foot">
+      <button class="btn ghost" data-close>Abbrechen</button>
+      <button class="btn cta" data-ok>OK</button>
+    </div>`,
+  bg=>{
+    bg.querySelector('[data-close]').onclick = ()=> bg.close();
+    bg.querySelector('[data-ok]').onclick = ()=>{ bg.close(); dann(); };
+    bg.querySelector('[data-ok]').focus();
+  });
+}
+
+$('#chipReset').addEventListener('click', ()=> bestaetigen({
+  titel:'Auswahl zurücksetzen',
+  text:'Sind Sie sicher, dass Sie die komplette Auswahl zurücksetzen wollen? Ihre Daten werden nicht gespeichert.',
+  dann:()=> resetAll({keepCity:true})
+}));
+
+/* Sichtbarkeit aller Bedienelemente je Zustand — einzige Stelle,
+   an der zwischen Übersicht und Stadtansicht umgeschaltet wird. */
+function setStage(stage){
+  const inCity = stage === 'city';
+  $('.panel-left').hidden   = !inCity;
+  $('#panelIntro').hidden   = inCity;
+  $('#panelResults').hidden = !inCity;
+  $('#chipMedia').hidden    = !inCity;
+  $('#chipReset').hidden    = !inCity;
+  $('#chipRadius').hidden   = true;
+
+  layerCities.clearLayers();
+  if(!inCity) renderCityOverview();
+
+  // Kompaktlayout: Ausgangspunkt liegt als Überlagerung, Ergebnisse im Sheet
+  if(istKompakt()) $('.panel-left').classList.remove('open');
+  $('#chipOrigin').hidden = !istKompakt() || !inCity;
+  if(istTelefon()) setSheet(inCity ? 'peek' : 'half');
+}
+
+/* Zoom als zweiter Weg zwischen den Zuständen */
+map.on('zoomend moveend', ()=>{
+  const z = map.getZoom();
+  if(S.city && z < ZOOM_OUT){ backToGermany({keepView:true}); return; }
+  if(!S.city && z >= ZOOM_IN){
+    const mitte = map.getCenter();
+    let beste = null;
+    CITIES.forEach(c=>{
+      if(!cityCount(c.n)) return;
+      const d = map.distance(mitte, [c.lat,c.lng]);
+      if(d < 35000 && (!beste || d < beste.d)) beste = {n:c.n, d};
+    });
+    if(beste) selectCity(beste.n, {keepView:true});
+  }
+});
+
+/* Burger-Menü in der Leiste */
+$('#burger').addEventListener('click', e=>{
+  if(openPop){ closePop(); return; }
+  popover(e.currentTarget,
+    `<a class="menu-item" href="https://www.walldecaux.de/mediadaten" target="_blank" rel="noopener">Mediadaten</a>
+     <a class="menu-item" href="https://www.walldecaux.de" target="_blank" rel="noopener">Hilfe</a>
+     <a class="menu-item" href="https://www.walldecaux.de" target="_blank" rel="noopener">Zurück zur Homepage</a>
+     <hr class="menu-sep">
+     <button class="menu-item" data-daten>Daten und Spaltenzuordnung</button>`,
+    el=>{
+      el.classList.add('pop--glass');
+      // erst im nächsten Frame öffnen, sonst springt das Glas ohne Animation auf
+      requestAnimationFrame(()=>el.classList.add('open'));
+      el.addEventListener('click', ev=>{
+        if(ev.target.closest('[data-daten]')){ closePop(); openDataModal(); }
+        else if(ev.target.closest('a')) closePop();
+      });
+    });
+});
+
+/* ══════════════════════════════════════════════════════════════════════════
+   AUSGANGSPUNKT
+   ══════════════════════════════════════════════════════════════════════════ */
+const ORIGIN_UI = {
+  address:{
+    title:'Adresse',
+    html:`<div class="field"><label for="oAddr">Adresse oder Ort</label>
+            <input class="input" id="oAddr" placeholder="Straße, Hausnummer, Stadt" autocomplete="off"></div>
+          <div class="suggest" id="oAddrSuggest"></div>`,
+    init(){
+      let t;
+      $('#oAddr').addEventListener('input', e=>{
+        const q=e.target.value.trim(); clearTimeout(t);
+        if(q.length<3){$('#oAddrSuggest').innerHTML='';return;}
+        t=setTimeout(async()=>{
+          try{
+            const r = await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=4&countrycodes=de&q=${encodeURIComponent(q)}`,{headers:{'Accept-Language':'de'}});
+            const l = await r.json();
+            $('#oAddrSuggest').innerHTML = l.map(x=>`<button data-lat="${x.lat}" data-lon="${x.lon}" data-name="${esc(x.display_name.split(',').slice(0,2).join(','))}">${esc(x.display_name)}</button>`).join('');
+          }catch{}
+        },380);
+      });
+      $('#oAddrSuggest').addEventListener('click', e=>{
+        const b=e.target.closest('button'); if(!b) return;
+        const p = [+b.dataset.lat, +b.dataset.lon];
+        ensureCityFor(p);
+        setOrigin({type:'address', label:b.dataset.name, points:[p]});
+        map.setView(p, 14);
+        refresh();
+      });
+    }
+  },
+
+  branches:{
+    title:'Filialen',
+    html:`<div class="field"><label for="oBrand">Marke suchen</label>
+            <input class="input" id="oBrand" placeholder="z. B. REWE, Douglas, dm"></div>
+          <div class="btn-row"><button class="btn ghost wide" id="oBrandGo">In dieser Stadt suchen</button></div>
+          <p class="status" id="oBrandStatus">Sucht in OpenStreetMap, etwa REWE, dm oder Douglas. Die finale Version kann stattdessen Ihre eigene Filialliste verwenden.</p>
+          <div class="btn-row" style="margin-top:12px"><button class="btn ghost wide" id="oListGo">Eigene Liste laden</button></div>`,
+    init(){
+      $('#oBrandGo').addEventListener('click', searchBrand);
+      $('#oBrand').addEventListener('keydown', e=>{ if(e.key==='Enter') searchBrand(); });
+      $('#oListGo').addEventListener('click', ()=> $('#listInput').click());
+    }
+  },
+
+  event:{
+    title:'Veranstaltung',
+    html:`<div class="field"><label for="oEvent">Veranstaltung</label>
+            <select class="input" id="oEvent">
+              <option value="">Bitte wählen</option>
+              <option value="berlin-marathon">Berlin-Marathon (Originalstrecke)</option>
+            </select></div>
+          <div class="btn-row"><button class="btn ghost wide" id="oGpxGo">Strecke als GPX laden</button></div>
+          <p class="status">Streckenverläufe werden redaktionell gepflegt. Eigene Strecken laden Sie als GPX-Datei.</p>`,
+    init(){
+      $('#oEvent').addEventListener('change', e=>{
+        const ev = EVENTS[e.target.value]; if(!ev) return;
+        ensureCityFor(ev.path[Math.floor(ev.path.length/2)]);
+        setOrigin({type:'event', label:ev.name, path:ev.path});
+        map.fitBounds(L.latLngBounds(ev.path).pad(.12));
+        refresh();
+      });
+      $('#oGpxGo').addEventListener('click', ()=> $('#gpxInput').click());
+    }
+  },
+
+  line:{
+    title:'ÖPNV-Linie',
+    html:`<div class="field"><label for="oLine">Linie</label>
+            <input class="input" id="oLine" placeholder="z. B. U1, S41, M10, 100"></div>
+          <div class="field"><label for="oLineType">Verkehrsmittel</label>
+            <select class="input" id="oLineType">
+              <option value="subway">U-Bahn</option><option value="light_rail">S-Bahn</option>
+              <option value="tram">Tram</option><option value="bus">Bus</option>
+            </select></div>
+          <div class="btn-row"><button class="btn ghost wide" id="oLineGo">Linie anzeigen</button></div>
+          <p class="status" id="oLineStatus">Linienverläufe kommen live aus OpenStreetMap. In Berlin etwa U1, S41 oder M10.</p>`,
+    init(){
+      $('#oLineGo').addEventListener('click', searchLine);
+      $('#oLine').addEventListener('keydown', e=>{ if(e.key==='Enter') searchLine(); });
+    }
+  },
+
+  draw:{
+    title:'Gebiet zeichnen',
+    html:`<p class="status" style="margin-top:0">Klicken Sie Eckpunkte auf die Karte.
+          Ein Doppelklick schließt die Fläche.</p>
+          <div class="btn-row" style="margin-top:12px">
+            <button class="btn ghost wide" id="oDrawReset">Neu zeichnen</button>
+          </div>`,
+    init(){
+      startDraw();
+      $('#oDrawReset').addEventListener('click', startDraw);
+    },
+    stop: stopDraw
+  }
+};
+
+let drawPts = [];
+
+/* Zeichenmodus an- und ausschalten. Der Doppelklick-Zoom der Karte muss
+   dabei pausieren, sonst zoomt der abschließende Doppelklick hinein. */
+function startDraw(){
+  drawPts = [];
+  layerOrigin.clearLayers();
+  map.doubleClickZoom.disable();
+  map.on('click', onDrawClick);
+  map.on('dblclick', finishDraw);
+}
+/* Zeichnen beenden und den Doppelklick-Zoom wieder freigeben. */
+function stopDraw(){
+  map.off('click', onDrawClick);
+  map.off('dblclick', finishDraw);
+  map.doubleClickZoom.enable();
+}
+
+/* Eckpunkt beim Zeichnen setzen. */
+function onDrawClick(e){
+  drawPts.push([e.latlng.lat, e.latlng.lng]);
+  layerOrigin.clearLayers();
+  if(drawPts.length>1)
+    L.polyline(drawPts,{interactive:false, color:CSSVAR('--ink'), weight:2, dashArray:'5 4'}).addTo(layerOrigin);
+  drawPts.forEach(p=>L.circleMarker(p,
+    {interactive:false, radius:4, color:'#fff', weight:2, fillColor:CSSVAR('--yellow'), fillOpacity:1})
+    .addTo(layerOrigin));
+}
+/* Gezeichnete Fläche schließen und als Ausgangspunkt übernehmen. */
+function finishDraw(){
+  if(drawPts.length<3) return;
+  // Zeichnen beenden, sonst würde der nächste Klick auf die Karte einen
+  // weiteren Eckpunkt setzen und die fertige Fläche verwerfen.
+  stopDraw();
+  setOrigin({type:'draw', label:'Eigenes Gebiet', polygon:drawPts.slice()});
+  refresh();
+}
+
+let activeOrigin = null;
+
+/* Eingrenzung aufheben: Alle Flächen der Stadt sind wieder gleichwertig,
+   die getroffene Auswahl bleibt unangetastet. Damit lassen sich mehrere
+   Gebiete nacheinander abarbeiten. */
+$('#originClear').addEventListener('click', ()=>{
+  if(ORIGIN_UI[activeOrigin]?.stop) ORIGIN_UI[activeOrigin].stop();
+  clearOrigin();
+  refresh();
+  toast('Eingrenzung aufgehoben. Ihre Auswahl bleibt erhalten.');
+});
+
+$('#originList').addEventListener('click', e=>{
+  const b = e.target.closest('[data-origin]'); if(!b) return;
+  const type = b.dataset.origin;
+  if(ORIGIN_UI[activeOrigin]?.stop) ORIGIN_UI[activeOrigin].stop();
+
+  if(activeOrigin === type){
+    activeOrigin = null; $('#originConfig').innerHTML='';
+    setOrigin(null); refresh();
+  }else{
+    // Beim Wechsel des Werkzeugs die bisherige Eingrenzung fallen lassen —
+    // sonst bliebe ein Gebiet stehen, das zum neuen Werkzeug nicht gehört.
+    activeOrigin = type;
+    setOrigin(null);
+    $('#originConfig').innerHTML = ORIGIN_UI[type].html;
+    ORIGIN_UI[type].init();
+    refresh();
+  }
+  $$('.origin').forEach(o=>o.setAttribute('aria-pressed', String(o.dataset.origin===activeOrigin)));
+});
+
+/* Ausgangspunkt setzen und auf der Karte darstellen: Punkte, Streckenzug
+   oder Fläche, dazu der Umkreis, sofern er greift. */
+function setOrigin(o){
+  S.origin = o;
+  layerOrigin.clearLayers();
+  $('#chipRadius').hidden = !o || o.type==='draw';
+  $('#originClear').hidden = !o;
+  if(!o) return;
+
+  const yellow = CSSVAR('--yellow'), ink = CSSVAR('--ink');
+  // Alle Formen des Ausgangspunkts sind reine Darstellung. Ohne
+  // interactive:false würden Fläche und Umkreis die Klicks auf die
+  // darunterliegenden Standorte abfangen.
+  const deko = {interactive:false};
+
+  if(o.path){
+    L.polyline(o.path,{...deko, color:ink, weight:7, opacity:.18}).addTo(layerOrigin);
+    L.polyline(o.path,{...deko, color:ink, weight:2.5}).addTo(layerOrigin);
+  }
+  if(o.polygon){
+    L.polygon(o.polygon,{...deko, color:ink, weight:2, fillColor:yellow, fillOpacity:.1}).addTo(layerOrigin);
+  }
+  (o.points||[]).forEach(p=>{
+    L.circleMarker(p,{...deko, radius:9, color:ink, weight:2, fillColor:yellow, fillOpacity:1}).addTo(layerOrigin);
+  });
+  if(o.points && o.points.length===1 && S.radius){
+    L.circle(o.points[0],{...deko, radius:S.radius, color:ink, weight:1, dashArray:'4 4', fillOpacity:.04}).addTo(layerOrigin);
+  }
+}
+
+/* Overpass-Abfragen */
+/* Overpass-Abfrage.
+   Der Content-Type ist entscheidend: ohne ihn schickt der Browser text/plain,
+   und Overpass liest den Rumpf dann wörtlich als Abfrage statt das data-Feld
+   auszupacken. Zweiter Server als Ausweichziel, weil der Hauptserver
+   regelmäßig drosselt. */
+/* Overpass-Abfrage.
+   Der Content-Type ist entscheidend: ohne ihn schickt der Browser text/plain,
+   und Overpass liest den Rumpf dann wörtlich als Abfrage statt das data-Feld
+   auszupacken. Zweiter Server als Ausweichziel, weil der Hauptserver
+   regelmäßig drosselt. */
+const OVERPASS = ['https://overpass-api.de/api/interpreter',
+                  'https://overpass.kumi.systems/api/interpreter',
+                  'https://overpass.osm.ch/api/interpreter'];
+
+/* Overpass-Abfrage über mehrere Server, POST mit Ausweich auf GET.
+   Der Content-Type muss gesetzt sein, sonst liest Overpass den Rumpf
+   wörtlich als Abfrage statt das data-Feld auszupacken. */
+async function overpass(query, sekunden=20){
+  let letzterFehler;
+  for(const url of OVERPASS){
+    for(const methode of ['POST','GET']){
+      const abbruch = new AbortController();
+      const uhr = setTimeout(()=>abbruch.abort(), sekunden*1000);
+      try{
+        const opt = methode === 'POST'
+          ? {method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'},
+             body:'data=' + encodeURIComponent(query), signal:abbruch.signal}
+          : {signal:abbruch.signal};
+        const ziel = methode === 'GET' ? url + '?data=' + encodeURIComponent(query) : url;
+        const res = await fetch(ziel, opt);
+        if(!res.ok) throw new Error(res.status === 429 ? 'ausgelastet' : 'Status ' + res.status);
+        const daten = await res.json();
+        // Overpass meldet Zeitüberläufe mit Status 200 und leerer Liste,
+        // der Grund steht dann in remark. Ohne diese Prüfung sieht ein
+        // abgebrochener Lauf wie ein leeres Suchergebnis aus.
+        if(daten.remark) throw new Error(daten.remark);
+        console.debug('Overpass', methode, daten.elements?.length ?? 0, 'Treffer');
+        return daten;
+      }catch(err){
+        letzterFehler = err;
+        console.warn('Overpass', methode, url, err.name || err.message);
+      }finally{
+        clearTimeout(uhr);
+      }
+    }
+  }
+  throw letzterFehler;
+}
+
+/* Technische Fehler in eine Meldung übersetzen, die weiterhilft. */
+function fehlertext(err){
+  const m = String(err?.message || '');
+  if(m.includes('timed out') || m.includes('Query timed out'))
+    return 'Der Kartendienst hat abgebrochen. Bitte in einer kleineren Stadt oder gleich noch einmal versuchen.';
+  if(m.includes('out of memory'))
+    return 'Das Suchgebiet ist zu groß für den Kartendienst.';
+  if(err?.name === 'AbortError')
+    return 'Der Kartendienst antwortet nicht. Das liegt meist an Auslastung — oder eine Firewall im Firmennetz blockiert ihn.';
+  if(String(err?.message).includes('ausgelastet'))
+    return 'Der Kartendienst ist gerade ausgelastet. Bitte kurz warten.';
+  return 'Die Abfrage ist fehlgeschlagen. Besteht eine Internetverbindung?';
+}
+
+/* Suchgebiet für externe Abfragen: die Ausdehnung des Inventars der
+   aktuellen Stadt, mit etwas Rand. */
+function cityBBox(){
+  const list = S.sites.filter(s=>!S.city || s.stadt===S.city);
+  if(!list.length) return null;
+  const lats=list.map(s=>s.lat), lngs=list.map(s=>s.lng);
+  return [Math.min(...lats)-.02,Math.min(...lngs)-.03,Math.max(...lats)+.02,Math.max(...lngs)+.03].join(',');
+}
+
+/* ── Filialsuche ──────────────────────────────────────────────────────── */
+async function searchBrand(){
+  const q = $('#oBrand').value.trim(); if(!q) return;
+  const bbox = cityBBox(); if(!bbox){ toast('Keine Standortdaten geladen.'); return; }
+  const st = $('#oBrandStatus');
+  st.textContent = 'Wird gesucht …'; st.classList.remove('err');
+  const knopf = $('#oBrandGo'), knopfText = knopf.textContent;
+  knopf.disabled = true; knopf.textContent = 'Suche läuft …';
+
+  // Erst über den Schlüssel filtern, dann den Namen prüfen — das hält die
+  // Abfrage schnell, weil brand und shop selten gesetzte Schlüssel sind.
+  const t = q.replace(/["\\]/g,'');
+  // brand und shop sind selten gesetzte Schlüssel — darüber filtert Overpass
+  // zuerst und muss nicht alle Objekte der Stadt durchsehen.
+  // Stufe 1 ist schnell, weil brand und shop selten gesetzte Schlüssel sind.
+  // Stufe 2 durchsucht alle benannten Objekte und läuft nur, wenn nötig.
+  const stufen = [
+    `[out:json][timeout:20];
+     ( nwr["brand"~"${t}",i](${bbox});
+       nwr["operator"~"${t}",i](${bbox});
+       nwr["shop"]["name"~"${t}",i](${bbox}); );
+     out center 300;`,
+    `[out:json][timeout:25];
+     nwr["name"~"${t}",i](${bbox});
+     out center 300;`
+  ];
+  const punkte = daten => (daten.elements || [])
+    .map(el=>[el.lat ?? el.center?.lat, el.lon ?? el.center?.lon])
+    .filter(p=>p[0]!=null && p[1]!=null);
+
+  try{
+    let pts = punkte(await overpass(stufen[0]));
+    if(!pts.length){
+      st.textContent = 'Erweitere die Suche …';
+      pts = punkte(await overpass(stufen[1], 30));
+    }
+    if(!pts.length){ st.textContent = `Keine Filialen für „${q}" in ${S.city} gefunden.`; return; }
+    setOrigin({type:'branches', label:`${q} · ${pts.length} Filialen`, points:pts});
+    map.fitBounds(L.latLngBounds(pts).pad(.1));
+    st.textContent = `${pts.length} Filialen gefunden.`;
+    refresh();
+  }catch(err){
+    st.textContent = fehlertext(err); st.classList.add('err'); console.error(err);
+  }finally{
+    knopf.disabled = false; knopf.textContent = knopfText;
+  }
+}
+
+/* ── ÖPNV-Linien ──────────────────────────────────────────────────────── */
+/* In OpenStreetMap ist dieselbe Linienart unterschiedlich getaggt —
+   S-Bahnen laufen je nach Stadt als light_rail oder als train. */
+const ROUTE_TYPES = {
+  subway:['subway'], light_rail:['light_rail','train','subway'],
+  tram:['tram'], bus:['bus','trolleybus']
+};
+
+/* Wegstücke aneinanderhängen: Overpass liefert die Teilstücke in
+   Relationsreihenfolge, aber teils gegenläufig. Ohne Sortierung springt
+   die Linie hin und her. */
+function stitch(ways){
+  if(!ways.length) return [];
+  const rest = ways.slice();
+  let linie = rest.shift().slice();
+  let treffer = true;
+  while(rest.length && treffer){
+    treffer = false;
+    for(let i=0;i<rest.length;i++){
+      const w = rest[i], nah = (a,b)=>Math.abs(a[0]-b[0])<1e-6 && Math.abs(a[1]-b[1])<1e-6;
+      const ende = linie[linie.length-1], anfang = linie[0];
+      if(nah(ende, w[0]))                 linie = linie.concat(w.slice(1));
+      else if(nah(ende, w[w.length-1]))   linie = linie.concat(w.slice().reverse().slice(1));
+      else if(nah(anfang, w[w.length-1])) linie = w.slice(0,-1).concat(linie);
+      else if(nah(anfang, w[0]))          linie = w.slice().reverse().slice(0,-1).concat(linie);
+      else continue;
+      rest.splice(i,1); treffer = true; break;
+    }
+  }
+  return linie;
+}
+
+/* ÖPNV-Linie aus OpenStreetMap laden und als Ausgangspunkt setzen. */
+async function searchLine(){
+  const ref = $('#oLine').value.trim(); if(!ref) return;
+  const arten = ROUTE_TYPES[$('#oLineType').value] || ['subway'];
+  const bbox = cityBBox(); if(!bbox){ toast('Keine Standortdaten geladen.'); return; }
+  const st = $('#oLineStatus');
+  st.textContent = 'Wird geladen …'; st.classList.remove('err');
+  const knopf = $('#oLineGo'), knopfText = knopf.textContent;
+  knopf.disabled = true; knopf.textContent = 'Wird geladen …';
+
+  const r = ref.replace(/["\\]/g,'');
+  const query = `[out:json][timeout:20];
+    relation["type"="route"]["route"~"^(${arten.join('|')})$"]["ref"~"^${r}$",i](${bbox});
+    out geom;`;
+  try{
+    const data = await overpass(query, 25);
+    // längste Relation gewinnt — Hin- und Rückrichtung sind getrennt erfasst
+    let beste = [];
+    data.elements.forEach(rel=>{
+      const ways = (rel.members||[])
+        .filter(m=>m.type==='way' && m.geometry)
+        .map(m=>m.geometry.map(g=>[g.lat,g.lon]));
+      const linie = stitch(ways);
+      if(linie.length > beste.length) beste = linie;
+    });
+    if(beste.length < 2){
+      st.textContent = `Für „${ref}" wurde in ${S.city} kein Verlauf gefunden.`;
+      return;
+    }
+    setOrigin({type:'line', label:`Linie ${ref}`, path:beste});
+    map.fitBounds(L.latLngBounds(beste).pad(.08));
+    st.textContent = `Verlauf geladen, ${beste.length} Stützpunkte.`;
+    refresh();
+  }catch(err){
+    st.textContent = fehlertext(err); st.classList.add('err'); console.error(err);
+  }finally{
+    knopf.disabled = false; knopf.textContent = knopfText;
+  }
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   RELEVANZ + DARSTELLUNG
+   ══════════════════════════════════════════════════════════════════════════ */
+function relevance(site){
+  const o = S.origin;
+  const p = [site.lat, site.lng];
+  if(!o) return {rel:true, dist:null};
+  if(o.polygon) return {rel:inPolygon(p,o.polygon), dist:null};
+  let d = Infinity;
+  if(o.path)   d = Math.min(d, distToPath(p, o.path));
+  if(o.points) d = Math.min(d, distToPoints(p, o.points));
+  return {rel:d<=S.radius, dist:d};
+}
+
+/* Zentrale Neuzeichnung: filtern, Relevanz bestimmen, Karte und alle
+   Listen aktualisieren. Wird nach jeder Zustandsänderung aufgerufen. */
+function refresh(){
+  layerSites.clearLayers();
+  S.markers.clear();
+
+  // Deutschlandansicht: nur Stadtmarker, kein Einzelinventar
+  if(!S.city){
+    S.results = [];
+    renderResults(); renderDock(); renderDrawer();
+    return;
+  }
+
+  const pool = S.sites.filter(s =>
+    (!S.city || s.stadt===S.city) && S.activeMedia.has(s.medium));
+
+  const scored = pool.map(s=>({site:s, ...relevance(s)}));
+  // Mit Ausgangspunkt nach Entfernung, sonst alphabetisch nach Standort —
+  // eine Liste in Dateireihenfolge ist für niemanden lesbar.
+  const relevant = scored.filter(x=>x.rel).sort(S.origin
+    ? (a,b)=>(a.dist??0)-(b.dist??0)
+    : (a,b)=>(a.site.standort||'').localeCompare(b.site.standort||'','de',{numeric:true}));
+  S.results = relevant;
+
+  // Auto-Pan-Ränder fürs Popup: so weit pannen, dass es unter der schwebenden
+  // Navigationsleiste und über dem Dock frei liegt.
+  const panTop = (parseInt(CSSVAR('--panel-top')) || 88) + 16;
+  const panBot = (parseInt(CSSVAR('--dock-h'))    || 72) + 32;
+
+  scored.forEach(({site, rel})=>{
+    const sel = S.selection.has(site.sid);
+    // Relevante Standorte tragen immer das Werbeträger-Icon (weiß, nach Auswahl
+    // blau). Nur das Umfeld außerhalb des Umkreises bleibt ein schlichter Punkt.
+    const m = (rel || sel)
+      ? L.marker([site.lat,site.lng], {icon:markerIcon(site.medium, sel?'sel':''), keyboard:false})
+      : L.circleMarker([site.lat,site.lng],
+          {radius:4, color:'#fff', weight:1, fillColor:'#9fb0bd', fillOpacity:.75});
+    if(m.setStyle) m.options.grundRadius = m.options.radius;   // für den Hover
+    m.bindPopup(()=>popup(site),{closeButton:true,offset:[0,-4],
+      autoPanPaddingTopLeft:[40,panTop], autoPanPaddingBottomRight:[40,panBot]});
+    m.on('popupopen', ()=>{ const b=document.querySelector('.pp .btn'); if(b) b.onclick=()=>{toggle(site);map.closePopup();}; });
+    m.addTo(layerSites);
+    S.markers.set(site.sid, m);
+  });
+
+  renderResults();
+  renderDock();
+  renderDrawer();
+}
+
+/* Inhalt des Kartenpopups zu einem Standort. */
+function popup(site){
+  const sel = S.selection.has(site.sid);
+  const rows = [
+    ['Werbeträger', site.medium], ['Wirkungsrichtung', site.wirkrichtung],
+    ['PPS', site.pps],
+    ['Flächen', panelsOf(site)],
+    ['Preis pro Tag', site.preis!=null?euro(site.preis):null]
+  ].filter(([,v])=>v!=null && v!=='');
+  return `<div class="pp">
+    <span class="pp-ico" style="color:${S.colorOf[site.medium]||CSSVAR('--blue')}">${mediaSvg(site.medium,24)}</span>
+    <h4>${esc(site.standort||'Werbefläche')}</h4>
+    <p class="m">Standort ${esc(site.sid)}</p>
+    ${rows.map(([k,v])=>`<div class="row"><span>${k}</span><span>${esc(v)}</span></div>`).join('')}
+    <button class="btn cta wide">${sel?'Entfernen':'Zur Auswahl'}</button>
+  </div>`;
+}
+
+/* Sammelauswahl für alles, was gerade in der Liste steht */
+function renderAddAll(){
+  const b = $('#addAll'), n = S.results.length;
+  b.hidden = n < 2;
+  if(b.hidden) return;
+  const alleDrin = S.results.every(({site})=>S.selection.has(site.sid));
+  b.textContent = alleDrin ? 'Auswahl aufheben' : `Alle ${n} hinzufügen`;
+  b.dataset.mode = alleDrin ? 'off' : 'on';
+}
+
+$('#addAll').addEventListener('click', e=>{
+  const aus = e.currentTarget.dataset.mode === 'off';
+  S.results.forEach(({site})=>{
+    if(aus) S.selection.delete(site.sid);
+    else if(!S.selection.has(site.sid))
+      S.selection.set(site.sid, {site, sel:fullSel(site)});
+  });
+  refresh();
+  toast(aus ? 'Auswahl aufgehoben.' : `${plural(S.results.length,'Standort','Standorte')} hinzugefügt.`);
+});
+
+/* Ergebnisliste der rechten Spalte. */
+function renderResults(){
+  const list = $('#resultList');
+  const n = S.results.length;
+  renderAddAll();
+  const anzahl = plural(n, 'Standort', 'Standorte');
+  $('#resultTitle').textContent = S.origin
+    ? `${anzahl} in der Nähe`
+    : `${anzahl} in ${S.city||'der Auswahl'}`;
+
+  // Auswahl in anderen Städten sichtbar machen — sonst wirkt das Dock
+  // mit seiner höheren Zahl wie ein Fehler.
+  const anderswo = [...S.selection.values()].filter(e=>e.site.stadt !== S.city);
+  const hinweis = $('#otherCities');
+  hinweis.hidden = !anderswo.length;
+  if(anderswo.length){
+    const staedte = [...new Set(anderswo.map(e=>e.site.stadt))].sort((a,b)=>a.localeCompare(b,'de'));
+    hinweis.innerHTML = `${plural(anderswo.length,'Standort','Standorte')} Ihrer Auswahl `
+      + `${anderswo.length === 1 ? 'liegt' : 'liegen'} in ${esc(staedte.join(', '))}. `
+      + `<button class="link-inline" data-showall>In der Auswahl ansehen</button>`;
+  }
+
+  if(!n){
+    const stadtMedien = cityMedia().length;
+    const gefiltert = S.activeMedia.size < stadtMedien;
+    list.innerHTML = `<div class="empty">
+      ${gefiltert
+        ? `Kein Treffer — der Filter zeigt gerade ${S.activeMedia.size} von ${stadtMedien} Werbeträgern.`
+        : S.origin
+          ? 'In diesem Umkreis liegen keine Werbeflächen.'
+          : 'Keine Werbeflächen für diese Auswahl.'}
+      ${!gefiltert && S.origin && S.origin.type !== 'draw' && S.radius < 3000
+        ? `<br><button class="btn ghost small" data-widen style="margin-top:14px">Umkreis auf ${
+             (Math.min(S.radius*2,3000)/1000).toFixed(1).replace('.',',')} km vergrößern</button>` : ''}
+      ${gefiltert ? '<br><button class="btn ghost small" data-clearfilter style="margin-top:14px">Filter zurücksetzen</button>' : ''}
+    </div>`;
+    return;
+  }
+
+  const GRENZE = 200;
+
+  list.innerHTML = S.results.slice(0,GRENZE).map(({site,dist})=>{
+    const sel = S.selection.has(site.sid);
+    const pz = panelsOf(site);
+    return `<button class="card ${sel?'is-selected':''}" data-sid="${esc(site.sid)}">
+      <span class="thumb" style="color:${S.colorOf[site.medium]||CSSVAR('--blue')}">
+        ${mediaSvg(site.medium,30)}
+        ${pz>1?`<span class="icon-badge">${pz}</span>`:''}
+      </span>
+      <span class="card-main">
+        <strong>${esc(site.standort||'Werbefläche')}</strong>
+        <span class="card-meta">${esc(site.medium)}${site.wirkrichtung?` · Blick ${esc(site.wirkrichtung)}`:''}</span>
+        <span class="card-foot">
+          ${site.preis!=null?`<span class="price">${euro(site.preis)} <em>pro Tag und Fläche</em></span>`:'<span class="price"><em>Preis auf Anfrage</em></span>'}
+          ${dist!=null?`<span class="dist">${dist<1000?Math.round(dist)+' m':(dist/1000).toFixed(1)+' km'}</span>`:''}
+        </span>
+      </span>
+    </button>`;
+  }).join('');
+
+  // Bei sehr vielen Treffern wird die Liste gekürzt — das gehört gesagt.
+  if(n > GRENZE) list.insertAdjacentHTML('beforeend',
+    `<p class="list-note">Es werden ${GRENZE} von ${n} Standorten angezeigt.
+     Grenzen Sie die Suche ein, um alle zu sehen.</p>`);
+}
+
+$('#resultList').addEventListener('click', e=>{
+  if(e.target.closest('[data-widen]')){
+    S.radius = Math.min(S.radius * 2, 3000);
+    $('#chipRadiusLabel').textContent = 'Umkreis ' +
+      (S.radius >= 1000 ? (S.radius/1000).toFixed(1)+' km' : S.radius+' m');
+    setOrigin(S.origin);   // Kreis neu zeichnen
+    refresh();
+    return;
+  }
+  if(e.target.closest('[data-clearfilter]')){
+    S.activeMedia = new Set(cityMedia());
+    updateMediaChip(); refresh();
+    return;
+  }
+  const c = e.target.closest('[data-sid]'); if(!c) return;
+  const site = S.sites.find(s=>s.sid===c.dataset.sid);
+  if(!site) return;
+  toggle(site);
+  // Die Karte springt zum Standort, damit niemand etwas auswählt,
+  // das er nie gesehen hat.
+  map.setView([site.lat, site.lng], Math.max(map.getZoom(), 16), {animate:true});
+});
+/* Hervorheben eines Standorts von der Liste aus. Punkte wachsen, Icons
+   werden über eine Klasse vergrößert — beim Zurücksetzen zählt der beim
+   Zeichnen gemerkte Grundradius, nicht ein fester Wert. */
+function markerHover(sid, on){
+  const m = S.markers.get(sid); if(!m) return;
+  if(m.setStyle) m.setStyle({radius: on ? 7 : (m.options.grundRadius ?? 4)});
+  else m.getElement()?.querySelector('.mk')?.classList.toggle('hover', on);
+}
+$('#resultList').addEventListener('mouseover', e=>{
+  const c = e.target.closest('[data-sid]'); if(c) markerHover(c.dataset.sid, true);
+});
+$('#resultList').addEventListener('mouseout', e=>{
+  const c = e.target.closest('[data-sid]'); if(c) markerHover(c.dataset.sid, false);
+});
+
+/* ══════════════════════════════════════════════════════════════════════════
+   AUSWAHL
+   ══════════════════════════════════════════════════════════════════════════ */
+function toggle(site){
+  S.selection.has(site.sid)
+    ? S.selection.delete(site.sid)
+    : S.selection.set(site.sid,{site, sel:fullSel(site)});
+  refresh();
+}
+const frameCount = () => [...S.selection.values()].reduce((n,e)=>n+selCount(e),0);
+
+/* Auswahlleiste am unteren Rand. */
+function renderDock(){
+  const dock = $('#dock');
+  dock.classList.toggle('is-idle', S.selection.size===0);
+  const st = S.selection.size, fl = frameCount();
+  $('#dockCount').innerHTML =
+    `<b>${st}</b> ${st === 1 ? 'Standort' : 'Standorte'} <span>·</span> ` +
+    `<b>${fl}</b> ${fl === 1 ? 'Fläche' : 'Flächen'}`;
+}
+
+/* Inhalt der Auswahl-Schublade. */
+/* Inhalt der Auswahl-Schublade, nach Städten gruppiert. Bei einer Auswahl
+   über mehrere Städte ist das die Struktur, in der auch der Vertrieb denkt. */
+function renderDrawer(){
+  const body = $('#drawerBody');
+  if(!S.selection.size){ body.innerHTML = '<div class="empty">Noch nichts ausgewählt.</div>'; return; }
+
+  const nachStadt = new Map();
+  S.selection.forEach(eintrag=>{
+    const stadt = eintrag.site.stadt || 'Ohne Stadt';
+    if(!nachStadt.has(stadt)) nachStadt.set(stadt, []);
+    nachStadt.get(stadt).push(eintrag);
+  });
+  const staedte = [...nachStadt.keys()].sort((a,b)=>a.localeCompare(b,'de'));
+
+  const standort = (entry) => {
+    const {site, sel} = entry;
+    const auf = drawerOpen.has(site.sid);
+    const gewaehlt = selCount(entry), gesamt = panelsOf(site);
+    const meta = [
+      site.qid ? `QID ${esc(site.qid)}` : '',
+      site.pps ? `PPS ${esc(site.pps)}` : '',
+      `${gewaehlt} von ${gesamt} Flächen`
+    ].filter(Boolean).join(' · ');
+    return `
+    <div class="sel-row" data-sid="${esc(site.sid)}">
+      <div class="sel-head">
+        <button class="sel-expand" data-expand aria-expanded="${auf}" aria-label="Flächen anzeigen">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 6l6 6-6 6"/></svg>
+        </button>
+        <strong>${esc(site.standort||'Werbefläche')}</strong>
+        <button class="icon-btn" data-drop aria-label="Entfernen">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 5l14 14M19 5L5 19"/></svg>
+        </button>
+      </div>
+      <p class="card-meta">${meta}</p>
+      <div class="sel-belegungen" ${auf?'':'hidden'}>
+        ${site.frames.map((f,i)=>{
+          const set = sel.get(i) || new Set();
+          return `<div class="sel-belegung">
+            <div class="frame">
+              <span class="fdot" style="color:${S.colorOf[f.medium]||CSSVAR('--blue')}">${mediaSvg(f.medium,16)}${f.panels>1?`<span class="icon-badge">${f.panels}</span>`:''}</span>
+              <span class="fname">${esc(f.medium)}${f.wirkrichtung?` · ${esc(f.wirkrichtung)}`:''}</span>
+              <span class="fprice">${f.preis!=null?euro(f.preis):'—'}</span>
+            </div>
+            <div class="sel-panels">
+              ${Array.from({length:f.panels||1},(_,k)=>`
+                <label class="sel-panel"><input type="checkbox" data-fk="${i}" data-pi="${k}" ${set.has(k)?'checked':''}> Fläche ${k+1}</label>`).join('')}
+            </div>
+          </div>`;
+        }).join('')}
+      </div>
+    </div>`;
+  };
+
+  // Zwischenüberschrift nur, wenn tatsächlich mehrere Städte betroffen sind
+  body.innerHTML = staedte.map(stadt=>{
+    const eintraege = nachStadt.get(stadt);
+    const flaechen = eintraege.reduce((n,e)=>n+selCount(e),0);
+    const kopf = staedte.length > 1
+      ? `<h3 class="sel-city">${esc(stadt)}
+           <span>${plural(eintraege.length,'Standort','Standorte')} · ${plural(flaechen,'Fläche','Flächen')}</span>
+         </h3>` : '';
+    return kopf + eintraege.map(standort).join('');
+  }).join('');
+}
+
+$('#drawerBody').addEventListener('click', e=>{
+  const row = e.target.closest('[data-sid]'); if(!row) return;
+  if(e.target.closest('[data-drop]')){ S.selection.delete(row.dataset.sid); drawerOpen.delete(row.dataset.sid); refresh(); return; }
+  const knopf = e.target.closest('[data-expand]');
+  if(knopf){
+    const auf = knopf.getAttribute('aria-expanded') === 'true';
+    knopf.setAttribute('aria-expanded', String(!auf));
+    row.querySelector('.sel-belegungen').hidden = auf;
+    auf ? drawerOpen.delete(row.dataset.sid) : drawerOpen.add(row.dataset.sid);
+  }
+});
+$('#drawerBody').addEventListener('change', e=>{
+  const box = e.target.closest('input[data-pi]'); if(!box) return;
+  const row = e.target.closest('[data-sid]');
+  const entry = S.selection.get(row.dataset.sid); if(!entry) return;
+  const fk = +box.dataset.fk, pi = +box.dataset.pi;
+  let set = entry.sel.get(fk);
+  if(!set){ set = new Set(); entry.sel.set(fk, set); }
+  box.checked ? set.add(pi) : set.delete(pi);
+  if(selCount(entry) === 0){ S.selection.delete(row.dataset.sid); drawerOpen.delete(row.dataset.sid); }
+  refresh();
+});
+// Verweis aus dem Hinweis heraus in die Auswahl
+$('#otherCities').addEventListener('click', e=>{
+  if(e.target.closest('[data-showall]')) $('#openDrawer').click();
+});
+
+$('#openDrawer').addEventListener('click', ()=>{ $('#drawer').classList.add('open'); $('#drawer').setAttribute('aria-hidden','false'); });
+$('#closeDrawer').addEventListener('click', ()=>{ $('#drawer').classList.remove('open'); $('#drawer').setAttribute('aria-hidden','true'); });
+$('#clearAll').addEventListener('click', ()=> bestaetigen({
+  titel:'Auswahl leeren',
+  text:'Alle ausgewählten Standorte werden entfernt. Ihre Daten werden nicht gespeichert.',
+  dann:()=>{ S.selection.clear(); drawerOpen.clear(); refresh(); }
+}));
+
+/* ══════════════════════════════════════════════════════════════════════════
+   CHIPS
+   ══════════════════════════════════════════════════════════════════════════ */
+/* Popover an einem Element der Kopfleiste. Es ist immer höchstens eines
+   offen; ein Klick daneben schließt es. */
+let openPop = null;
+function popover(anchor, html, init){
+  closePop();
+  const el = document.createElement('div');
+  el.className = 'pop';
+  el.innerHTML = html;
+  document.body.appendChild(el);
+  const r = anchor.getBoundingClientRect();
+  el.style.left = Math.max(12, Math.min(r.left, innerWidth - el.offsetWidth - 16)) + 'px';
+  anchor.setAttribute('aria-expanded','true');
+  openPop = {el, anchor};
+  init?.(el);
+  setTimeout(()=>document.addEventListener('mousedown', outside), 0);
+}
+/* Klick außerhalb schließt das offene Popover. */
+function outside(e){ if(openPop && !openPop.el.contains(e.target) && !openPop.anchor.contains(e.target)) closePop(); }
+/* Offenes Popover schließen und seinen Listener abräumen. */
+function closePop(){
+  if(!openPop) return;
+  openPop.anchor.setAttribute('aria-expanded','false');
+  openPop.el.remove(); openPop = null;
+  document.removeEventListener('mousedown', outside);
+}
+
+/* Ortschip: zurück zur Übersicht oder direkt in eine andere Stadt */
+$('#chipPlace').addEventListener('click', e=>{
+  if(openPop){ closePop(); return; }
+  popover(e.currentTarget,
+    `<button class="menu-item" data-back><strong>Alle Städte anzeigen</strong></button>
+     <hr class="menu-sep">
+     ${cities().map(c=>`<button class="menu-item" data-c="${esc(c)}">${esc(c)}</button>`).join('')}`,
+    el=>{
+      el.classList.add('pop--glass');
+      requestAnimationFrame(()=>el.classList.add('open'));
+      el.addEventListener('click', ev=>{
+        if(ev.target.closest('[data-back]')){ closePop(); backToGermany(); return; }
+        const b = ev.target.closest('[data-c]'); if(!b) return;
+        closePop(); selectCity(b.dataset.c);
+      });
+    });
+});
+
+/* Beschriftung des Werbeträger-Filters an den Zustand anpassen. */
+function updateMediaChip(){
+  const liste = cityMedia();
+  const aktiv = [...S.activeMedia].filter(m=>liste.includes(m));
+  const n = aktiv.length, all = liste.length;
+  $('#chipMediaLabel').textContent = n>=all ? 'Werbeträger auswählen' : (n===1 ? aktiv[0] : `${n} von ${all} Werbeträgern`);
+  $('#chipMedia').classList.toggle('accent', n<all);
+}
+$('#chipMedia').addEventListener('click', e=>{
+  if(openPop){ closePop(); return; }
+  popover(e.currentTarget,
+    `<h3>Werbeträger</h3><p class="help">Was möchten Sie buchen?</p>
+     ${cityMedia().map(m=>`<label class="media-row">
+        <input type="checkbox" data-m="${esc(m)}" ${S.activeMedia.has(m)?'checked':''}>
+        <span class="media-ico" style="color:${S.colorOf[m]}">${mediaSvg(m,20)}</span>
+        <span class="media-text"><strong>${esc(m)}</strong>
+          <em>${plural(cityMediaPanels(m),'Fläche','Flächen')}</em></span>
+      </label>`).join('')}`,
+    el=>{
+      el.classList.add('pop--glass','pop--glass-pad');
+      requestAnimationFrame(()=>el.classList.add('open'));
+      el.addEventListener('change', ev=>{
+        const cb = ev.target.closest('[data-m]'); if(!cb) return;
+        cb.checked ? S.activeMedia.add(cb.dataset.m) : S.activeMedia.delete(cb.dataset.m);
+        updateMediaChip(); refresh();
+      });
+    });
+});
+
+$('#chipRadius').addEventListener('click', e=>{
+  if(openPop){ closePop(); return; }
+  popover(e.currentTarget,
+    `<h3>Umkreis</h3><p class="help">Wie weit vom Ausgangspunkt dürfen die Flächen entfernt sein?</p>
+     <div class="field"><label>Entfernung <output id="rOut">${S.radius} m</output></label>
+       <input type="range" id="rVal" min="100" max="3000" step="100" value="${S.radius}"></div>`,
+    el=>{
+      el.classList.add('pop--glass','pop--glass-pad');
+      requestAnimationFrame(()=>el.classList.add('open'));
+      el.querySelector('#rVal').addEventListener('input', ev=>{
+      S.radius = +ev.target.value;
+      el.querySelector('#rOut').textContent = S.radius>=1000 ? (S.radius/1000).toFixed(1)+' km' : S.radius+' m';
+      $('#chipRadiusLabel').textContent = 'Umkreis ' + (S.radius>=1000 ? (S.radius/1000).toFixed(1)+' km' : S.radius+' m');
+        setOrigin(S.origin); refresh();
+      });
+    });
+});
+
+/* ══════════════════════════════════════════════════════════════════════════
+   MODALE: DATEN + ANFRAGE
+   ══════════════════════════════════════════════════════════════════════════ */
+/* Dialog. Schließen läuft immer über bg.close(), damit der Escape-Handler
+   mit abgeräumt wird — sonst bleibt pro geöffnetem Dialog einer am
+   Dokument hängen. */
+function modal(html, init){
+  const bg = document.createElement('div');
+  bg.className = 'modal-bg';
+  bg.innerHTML = `<div class="modal" role="dialog" aria-modal="true">${html}</div>`;
+
+  /* Fokus im Dialog halten: Ohne diese Schleife wandert man mit der
+     Tabulatortaste hinter das Fenster in die Karte. */
+  const beiTaste = e => {
+    if(e.key === 'Escape'){ bg.close(); return; }
+    if(e.key !== 'Tab') return;
+    const ziele = [...bg.querySelectorAll(
+      'a[href], button:not([disabled]), input:not([disabled]), select, textarea')]
+      .filter(el=>el.offsetParent !== null);
+    if(!ziele.length) return;
+    const erster = ziele[0], letzter = ziele[ziele.length-1];
+    if(e.shiftKey && document.activeElement === erster){ e.preventDefault(); letzter.focus(); }
+    else if(!e.shiftKey && document.activeElement === letzter){ e.preventDefault(); erster.focus(); }
+  };
+  bg.close = () => { document.removeEventListener('keydown', beiTaste); bg.remove(); };
+
+  document.body.appendChild(bg);
+  bg.addEventListener('mousedown', e=>{ if(e.target === bg) bg.close(); });
+  document.addEventListener('keydown', beiTaste);
+  init?.(bg);
+  return bg;
+}
+
+/* Dialog für Datenimport und Spaltenzuordnung. */
+function openDataModal(){
+  const opts = f => ['<option value="">— keine —</option>'].concat(
+    LAST.headers.map(h=>`<option value="${esc(h)}" ${LAST.mapping[f]===h?'selected':''}>${esc(h)}</option>`)).join('');
+  modal(`
+    <header><div><p class="eyebrow">Prototyp</p><h2>Standortdaten</h2></div></header>
+    <div class="modal-body">
+      <p style="margin-top:0;font-size:var(--t-sm);color:var(--ink-30)">
+        ${LAST.filename ? `Geladen: <b>${esc(LAST.filename)}</b> — ${S.rows.length.toLocaleString('de-DE')} Zeilen an ${S.sites.length.toLocaleString('de-DE')} Standorten.`
+                        : 'Noch keine eigene Datei geladen. Es sind Beispieldaten aktiv.'}
+      </p>
+      <div class="btn-row" style="margin:14px 0 22px">
+        <button class="btn cta" id="mPick">Excel oder CSV laden</button>
+        <button class="btn ghost" id="mDemo">Beispieldaten</button>
+      </div>
+      ${LAST.headers.length ? `<p class="eyebrow" style="margin-bottom:10px">Spaltenzuordnung</p>
+        ${Object.entries(FIELD_LABELS).map(([f,l])=>`
+          <label class="colmap-row"><span>${l}${REQUIRED_FIELDS.includes(f)?' *':''}</span>
+            <select class="input" data-field="${f}">${opts(f)}</select></label>`).join('')}` : ''}
+    </div>
+    <div class="modal-foot"><button class="btn ghost" data-close>Schließen</button></div>`,
+  bg=>{
+    bg.querySelector('#mPick').onclick = ()=> $('#fileInput').click();
+    bg.querySelector('#mDemo').onclick = ()=>{ ingest(demoRows(),'Beispieldaten'); bg.close(); refresh(); toast('Beispieldaten geladen.'); };
+    bg.querySelector('[data-close]').onclick = ()=> bg.close();
+    bg.addEventListener('change', e=>{
+      const s = e.target.closest('[data-field]'); if(!s) return;
+      LAST.mapping[s.dataset.field] = s.value || undefined;
+      if(applyMapping()) refresh();
+    });
+  });
+}
+
+/* Anfrage-Dialog mit Pflichtfeldprüfung und anschließender Bestätigung. */
+/* Anfrage-Dialog. Pflichtfelder sind mit * gekennzeichnet und werden beim
+   Senden geprüft; danach wechselt derselbe Dialog in eine Bestätigung. */
+const ANREDEN = ['Frau','Herr','Divers'];
+const BUNDESLAENDER = ['Baden-Württemberg','Bayern','Berlin','Brandenburg','Bremen','Hamburg',
+  'Hessen','Mecklenburg-Vorpommern','Niedersachsen','Nordrhein-Westfalen','Rheinland-Pfalz',
+  'Saarland','Sachsen','Sachsen-Anhalt','Schleswig-Holstein','Thüringen','International'];
+const DATENSCHUTZ = 'https://www.walldecaux.de/datenschutz';
+
+/* Dialog aufbauen, prüfen und im Erfolgsfall in die Bestätigung wechseln. */
+function openRequest(){
+  const flaechen = frameCount();
+  const auswahlliste = optionen => optionen
+    .map(o=>`<option value="${esc(o)}">${esc(o)}</option>`).join('');
+
+  const uebersicht = `
+    <div class="summary">
+      <div class="summary-row"><span>Ausgewählte Standorte</span><span>${S.selection.size}</span></div>
+      <div class="summary-row"><span>Werbeflächen</span><span>${flaechen}</span></div>
+      ${(()=>{ const st = selectedCities();
+        return `<div class="summary-row"><span>${st.length === 1 ? 'Stadt' : 'Städte'}</span>`
+             + `<span>${esc(st.join(', ') || S.city || '—')}</span></div>`; })()}
+      ${S.origin?`<div class="summary-row"><span>Ausgangspunkt</span><span>${esc(S.origin.label)}</span></div>`:''}
+    </div>`;
+
+  const bg = modal(`
+    <header><div><h2>Angebot anfragen</h2></div>
+      <button class="icon-btn modal-x" data-close aria-label="Schließen">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 5l14 14M19 5L5 19"/></svg>
+      </button></header>
+    <div class="modal-body" id="requestBody">
+      ${uebersicht}
+
+      <div class="field"><label for="rqAnrede">Anrede *</label>
+        <select class="input" id="rqAnrede">
+          <option value="">Bitte wählen</option>${auswahlliste(ANREDEN)}
+        </select></div>
+
+      <div class="grid-2">
+        <div class="field"><label for="rqVor">Vorname *</label><input class="input" id="rqVor" autocomplete="given-name"></div>
+        <div class="field"><label for="rqName">Nachname *</label><input class="input" id="rqName" autocomplete="family-name"></div>
+      </div>
+
+      <div class="field"><label for="rqFirma">Unternehmen *</label><input class="input" id="rqFirma" autocomplete="organization"></div>
+
+      <div class="grid-2">
+        <div class="field"><label for="rqMail">Geschäftliche E-Mail-Adresse *</label>
+          <input class="input" id="rqMail" type="email" autocomplete="email"></div>
+        <div class="field"><label for="rqTel">Telefonnummer</label>
+          <input class="input" id="rqTel" type="tel" autocomplete="tel"></div>
+      </div>
+
+      <div class="field"><label for="rqLand">Standort Firmensitz *</label>
+        <select class="input" id="rqLand">
+          <option value="">Bitte wählen</option>${auswahlliste(BUNDESLAENDER)}
+        </select></div>
+
+      <div class="field"><label for="rqZeit">Wunschzeitraum</label>
+        <input class="input" id="rqZeit" placeholder="z. B. ab Oktober, zwei Wochen"></div>
+
+      <div class="field"><label for="rqText">Ihr Anliegen *</label>
+        <textarea class="input" id="rqText" rows="3" placeholder="Worum geht es bei Ihrer Kampagne?"></textarea></div>
+
+      <label class="consent" for="rqOk">
+        <input type="checkbox" id="rqOk">
+        <span>Ich habe die <a href="${DATENSCHUTZ}" target="_blank" rel="noopener">Datenschutzbestimmungen</a>
+        zur Kenntnis genommen und möchte von der Wall GmbH unter den oben angegebenen
+        Kontaktdaten kontaktiert werden. *</span>
+      </label>
+
+      <p class="status" id="rqHinweis">Mit * gekennzeichnete Abfragen bitte ausfüllen. Ihre oben
+        angegebene E-Mail-Adresse werden wir auch für die Übersendung weiterer Informationen zu
+        unseren Veranstaltungen, Unternehmen, Studien und Newsletter verwenden. Hieran besteht
+        unsererseits ein berechtigtes Interesse (Art. 6 Abs. 1 lit. f DS-GVO). Sie können dieser
+        Verwendung jederzeit ohne Angaben von Gründen widersprechen. Weitere Informationen enthalten
+        unsere <a href="${DATENSCHUTZ}" target="_blank" rel="noopener">Datenschutzhinweise</a>.</p>
+    </div>
+    <div class="modal-foot" id="requestFoot">
+      <button class="btn ghost" data-close>Abbrechen</button>
+      <button class="btn cta" id="send">Anfrage senden</button>
+    </div>`,
+  bg=>{
+    bg.querySelectorAll('[data-close]').forEach(b=> b.onclick = ()=> bg.close());
+    bg.querySelector('#rqAnrede').focus();
+
+    bg.querySelector('#send').onclick = ()=>{
+      const feld = id => bg.querySelector('#' + id);
+      const mail = feld('rqMail'), zustimmung = feld('rqOk');
+
+      // bewusst nachsichtig geprüft: ein @ mit Punkt dahinter reicht als Plausibilität
+      const fehlt = ['rqAnrede','rqVor','rqName','rqFirma','rqLand','rqText']
+        .map(feld).filter(f=>!f.value.trim());
+      if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(mail.value.trim())) fehlt.push(mail);
+      if(!zustimmung.checked) fehlt.push(zustimmung);
+
+      bg.querySelectorAll('.input,.consent').forEach(e=>e.classList.remove('err'));
+      const hinweis = feld('rqHinweis');
+      if(fehlt.length){
+        fehlt.forEach(f=>(f === zustimmung ? f.closest('.consent') : f).classList.add('err'));
+        hinweis.classList.add('err');
+        hinweis.textContent = fehlt.length === 1 && fehlt[0] === zustimmung
+          ? 'Bitte bestätigen Sie die Datenschutzbestimmungen.'
+          : 'Bitte füllen Sie die mit * gekennzeichneten Felder aus.';
+        (fehlt[0] === zustimmung ? zustimmung : fehlt[0]).focus();
+        return;
+      }
+
+      // Bestätigung statt kurzer Meldung — es ist der einzige Moment,
+      // in dem der Nutzer etwas abgibt.
+      bg.querySelector('h2').textContent = 'Ihre Anfrage ist unterwegs';
+      feld('requestBody').innerHTML = `
+        ${uebersicht}
+        <p style="margin:18px 0 0;font-size:var(--t-body);line-height:1.55">
+          Vielen Dank. Wir haben Ihre Auswahl erhalten und melden uns
+          innerhalb von zwei Werktagen mit einem konkreten Angebot bei
+          <b>${esc(mail.value.trim())}</b>.
+        </p>
+        <p class="status">Ihre Auswahl bleibt erhalten — Sie können sie weiter bearbeiten,
+        exportieren oder als Link teilen.</p>`;
+      feld('requestFoot').innerHTML = '<button class="btn cta" data-fertig>Schließen</button>';
+      bg.querySelector('[data-fertig]').onclick = ()=> bg.close();
+      bg.querySelector('[data-fertig]').focus();
+    };
+  });
+  return bg;
+}
+
+$('#btnRequest').addEventListener('click', openRequest);
+$('#drawerRequest').addEventListener('click', openRequest);
+
+/* ══════════════════════════════════════════════════════════════════════════
+   DATEI-EINGABEN
+   ══════════════════════════════════════════════════════════════════════════ */
+$('#fileInput').addEventListener('change', e=>{
+  if(!e.target.files[0]) return;
+  readFile(e.target.files[0], (raw,name)=>{
+    if(ingest(raw,name)){
+      $$('.modal-bg').forEach(m=>m.close ? m.close() : m.remove());
+      // Nach dem Import zurück auf die Übersicht — die Städte können andere sein
+      backToGermany();
+      toast(`${S.rows.length.toLocaleString('de-DE')} Flächen geladen.`);
+    }
+  });
+  e.target.value='';
+});
+
+$('#listInput').addEventListener('change', e=>{
+  if(!e.target.files[0]) return;
+  readFile(e.target.files[0], (raw,name)=>{
+    const m = detectColumns([...new Set(raw.flatMap(r=>Object.keys(r)))]);
+    if(!m.lat || !m.lng){ toast('In der Liste wurden keine Koordinaten gefunden.'); return; }
+    const pts = raw.map(r=>[num(r[m.lat]),num(r[m.lng])]).filter(p=>p[0]!=null&&p[1]!=null);
+    if(!pts.length){ toast('Keine gültigen Koordinaten in der Liste.'); return; }
+    ensureCityFor(pts[0]);
+    setOrigin({type:'branches', label:`${name} · ${pts.length} Standorte`, points:pts});
+    map.fitBounds(L.latLngBounds(pts).pad(.1));
+    refresh();
+  });
+  e.target.value='';
+});
+
+$('#gpxInput').addEventListener('change', e=>{
+  const file = e.target.files[0]; if(!file) return;
+  const r = new FileReader();
+  r.onload = ev=>{
+    try{
+      let path;
+      if(/\.gpx$/i.test(file.name)){
+        const doc = new DOMParser().parseFromString(ev.target.result,'application/xml');
+        path = [...doc.querySelectorAll('trkpt, rtept')].map(p=>[+p.getAttribute('lat'),+p.getAttribute('lon')]);
+      }else{
+        const gj = JSON.parse(ev.target.result);
+        const f0 = gj.type==='FeatureCollection' ? gj.features[0] : gj;
+        const g = f0.geometry || f0;
+        path = (g.type==='MultiLineString' ? g.coordinates.flat() : g.coordinates).map(c=>[c[1],c[0]]);
+      }
+      if(!path || path.length<2) throw new Error('leer');
+      ensureCityFor(path[Math.floor(path.length/2)]);   // Mitte der Strecke
+      setOrigin({type:'event', label:file.name.replace(/\.[^.]+$/,''), path});
+      map.fitBounds(L.latLngBounds(path).pad(.1));
+      refresh();
+    }catch(err){ toast('Die Streckendatei konnte nicht gelesen werden.'); console.error(err); }
+  };
+  r.readAsText(file);
+  e.target.value='';
+});
+
+/* ══════════════════════════════════════════════════════════════════════════
+   START
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* ══════════════════════════════════════════════════════════════════════════
+   KOMPAKTBEDIENUNG — Bottom Sheet und Ausgangspunkt-Überlagerung
+   ══════════════════════════════════════════════════════════════════════════ */
+const istTelefon = () => matchMedia('(max-width:759px)').matches;
+const istKompakt = () => matchMedia('(max-width:1099px)').matches;
+
+/* Ausgangspunkt als Überlagerung öffnen und schließen */
+$('#chipOrigin').addEventListener('click', ()=>{
+  $('.panel-left').classList.toggle('open');
+});
+$('#closeOrigin').addEventListener('click', ()=> $('.panel-left').classList.remove('open'));
+
+/* Sichtbares Sheet ermitteln */
+function sheet(){ return $('#panelResults').hidden ? $('#panelIntro') : $('#panelResults'); }
+
+/* Sheet auf eine der drei Stufen setzen: peek, half oder full. */
+function setSheet(zustand){
+  const el = sheet();
+  el.classList.remove('half','full');
+  if(zustand !== 'peek') el.classList.add(zustand);
+  document.body.classList.toggle('sheet-open', zustand !== 'peek');
+  setTimeout(()=>map.invalidateSize(), 300);
+}
+
+/* Ziehgeste: der Griff und die Kopfzeile ziehen, die Liste scrollt weiter */
+let zug = null;
+let letzterZugWeg = 0;   // damit ein Ziehen nicht zusätzlich als Tippen zählt
+/* Beginn der Ziehgeste am Griff oder an der Kopfzeile. */
+function zugStart(e){
+  if(!istTelefon()) return;
+  const el = e.currentTarget.closest('.panel-right');
+  zug = {el, griff:e.currentTarget, y0:e.clientY, start:el.getBoundingClientRect().top, moved:0};
+  el.classList.add('dragging');
+  e.currentTarget.setPointerCapture?.(e.pointerId);
+}
+/* Sheet folgt dem Finger. */
+function zugMove(e){
+  if(!zug) return;
+  zug.moved = e.clientY - zug.y0;
+  const y = Math.max(0, zug.start + zug.moved);
+  zug.el.style.transform = `translateY(${y - (innerHeight - zug.el.offsetHeight)}px)`;
+}
+/* Beim Loslassen auf die nächstgelegene Stufe einrasten. */
+function zugEnd(){
+  if(!zug) return;
+  const el = zug.el;
+  el.classList.remove('dragging');
+  el.style.transform = '';
+  const oben = el.getBoundingClientRect().top;
+  const h = innerHeight;
+  // auf den nächstgelegenen Rastpunkt einschnappen
+  const punkte = [['peek', h - 78], ['half', h * .54], ['full', h - el.offsetHeight]];
+  const naechster = punkte.reduce((a,b)=> Math.abs(b[1]-oben) < Math.abs(a[1]-oben) ? b : a);
+  setSheet(naechster[0]);
+  letzterZugWeg = Math.abs(zug.moved);
+  zug = null;
+}
+
+['#panelIntro','#panelResults'].forEach(sel=>{
+  const el = $(sel);
+  // Gezogen wird nur am Griff und an der Kopfzeile — der Inhalt bleibt scrollbar
+  [el.querySelector('.sheet-grip'), el.querySelector('header')].filter(Boolean).forEach(griff=>{
+    griff.addEventListener('pointerdown', zugStart);
+    griff.addEventListener('pointermove', zugMove);
+    griff.addEventListener('pointerup', zugEnd);
+    griff.addEventListener('pointercancel', zugEnd);
+  });
+  el.querySelector('.sheet-grip').addEventListener('click', ()=>{
+    // Nach einem Ziehen kommt zusätzlich ein Klick — der darf nicht
+    // die gerade eingerastete Stufe wieder verstellen.
+    if(!istTelefon() || letzterZugWeg > 6){ letzterZugWeg = 0; return; }
+    setSheet(el.classList.contains('full') ? 'peek' : el.classList.contains('half') ? 'full' : 'half');
+  });
+});
+
+/* Layoutwechsel sauber auffangen */
+let letzteBreite = innerWidth;
+addEventListener('resize', ()=>{
+  if(Math.abs(innerWidth - letzteBreite) < 40) return;
+  letzteBreite = innerWidth;
+  $('#chipOrigin').hidden = !istKompakt() || !S.city;
+  if(!istKompakt()) $('.panel-left').classList.remove('open');
+  if(!istTelefon()){
+    $$('.panel-right').forEach(el=>el.classList.remove('half','full','dragging'));
+    document.body.classList.remove('sheet-open');
+  }
+  map.invalidateSize();
+  if(!S.city) showGermany(false);
+});
+
+
+/* Pflichtangaben — eine Quelle, drei Anzeigeorte */
+const LEGAL = [
+  ['Impressum',  'https://www.walldecaux.de/impressum'],
+  ['AGB',        'https://www.walldecaux.de/agb'],
+  ['Datenschutz','https://www.walldecaux.de/datenschutz'],
+  ['Wall GmbH',  'https://www.wall.de/'],
+  ['Über uns',   'https://www.walldecaux.de/walldecaux']
+];
+{
+  const html = LEGAL.map(([t,u])=>
+    `<a href="${u}" target="_blank" rel="noopener">${esc(t)}</a>`).join('');
+  $('#legalBar').innerHTML = html;
+  $$('.legal-inline').forEach(el=>el.innerHTML = html);
+}
+
+
+/* ══════════════════════════════════════════════════════════════════════════
+   TEILEN UND EXPORT
+   Der Link trägt den Zustand in der Adresse: Stadt, ausgewählte Standorte
+   und der Werbeträgerfilter. Er greift nur auf derselben Datenbasis —
+   bei einer anderen Excel finden sich die Standort-IDs schlicht nicht wieder.
+   ══════════════════════════════════════════════════════════════════════════ */
+function shareURL(){
+  const p = new URLSearchParams();
+  if(S.city) p.set('stadt', S.city);
+  if(S.selection.size) p.set('sids', [...S.selection.keys()].join(','));
+  if(S.activeMedia.size && S.activeMedia.size !== cityMedia().length)
+    p.set('medien', [...S.activeMedia].join('~'));
+  return location.href.split('#')[0] + '#' + p.toString();
+}
+
+/* Zustand aus einem geteilten Link herstellen: Filter, Stadt, Auswahl. */
+function restoreFromHash(){
+  const roh = location.hash.replace(/^#/, '');
+  if(!roh) return;
+  const p = new URLSearchParams(roh);
+
+  const sids = (p.get('sids')||'').split(',').filter(Boolean);
+
+  // Stadt aus der Adresse, ersatzweise aus dem ersten gefundenen Standort
+  const stadt = p.get('stadt')
+    || S.sites.find(s=>sids.includes(s.sid))?.stadt;
+  if(stadt && S.sites.some(s=>s.stadt===stadt)) selectCity(stadt);
+
+  // Werbeträgerfilter erst nach der Stadtwahl, sonst setzt selectCity ihn zurück
+  const medien = p.get('medien');
+  if(medien){
+    const gewuenscht = medien.split('~').filter(m=>cityMedia().includes(m));
+    if(gewuenscht.length){ S.activeMedia = new Set(gewuenscht); updateMediaChip(); refresh(); }
+  }
+
+  let gefunden = 0;
+  sids.forEach(sid=>{
+    const site = S.sites.find(s=>s.sid===sid);
+    if(!site) return;
+    S.selection.set(site.sid, {site, sel:fullSel(site)});
+    gefunden++;
+  });
+  if(gefunden) refresh();
+  if(sids.length && gefunden < sids.length)
+    toast(`${gefunden} von ${sids.length} Standorten konnten geladen werden.`);
+}
+
+$('#btnShare').addEventListener('click', ()=>{
+  const url = shareURL();
+  modal(`
+    <header><div><h2>Teilen</h2></div></header>
+    <div class="modal-body">
+      <p style="margin:0;font-size:var(--t-body)">Kopieren Sie diesen Link, um ihn mit anderen zu teilen. Er öffnet den Standortfinder mit Ihrer aktuellen Auswahl.</p>
+      <div class="share-link">
+        <input id="shareInput" readonly value="${esc(url)}">
+        <button class="btn cta" id="shareCopy">Kopieren</button>
+      </div>
+    </div>
+    <div class="modal-foot"><button class="btn ghost" data-close>Schließen</button></div>`,
+  bg=>{
+    const feld = bg.querySelector('#shareInput');
+    feld.addEventListener('focus', ()=>feld.select());
+    bg.querySelector('[data-close]').onclick = ()=> bg.close();
+    bg.querySelector('#shareCopy').onclick = async ()=>{
+      feld.select();
+      try{ await navigator.clipboard.writeText(url); }
+      catch{ document.execCommand('copy'); }
+      bg.querySelector('#shareCopy').textContent = 'Kopiert';
+      location.hash = url.split('#')[1] || '';
+    };
+  });
+});
+
+/* Export der Auswahl als CSV — Semikolon und BOM, damit deutsches Excel
+   die Datei ohne Importdialog richtig öffnet. */
+function exportCSV(){
+  const spalten = ['Standort Nr.','QID','PPS','Jeweiliger Standort','Stadt','Werbeträger',
+                   'Wirkungsrichtung','Anzahl Flächen','Preis pro Tag','Längengrad','Breitengrad'];
+  const zeilen = [spalten.join(';')];
+  S.selection.forEach(entry=>entry.site.frames.forEach((f,i)=>{
+    const anzahl = (entry.sel.get(i)||new Set()).size;
+    if(!anzahl) return;
+    zeilen.push([f.sid,f.qid,f.pps,f.standort,f.stadt,f.medium,f.wirkrichtung,anzahl,
+      f.preis!=null?String(f.preis).replace('.',','):'', f.lng,f.lat]
+      .map(v=>`"${String(v ?? '').replace(/"/g,'""')}"`).join(';'));
+  }));
+
+  const blob = new Blob(['\uFEFF' + zeilen.join('\r\n')], {type:'text/csv;charset=utf-8'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `standortauswahl-${new Date().toISOString().slice(0,10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+$('#btnExport').addEventListener('click', ()=>{
+  const flaechen = frameCount();
+  modal(`
+    <header><div><h2>Export</h2></div></header>
+    <div class="modal-body">
+      <p style="margin:0;font-size:var(--t-body)">Tabelle mit den ausgewählten Standorten laden.</p>
+      <div class="summary" style="margin-top:16px">
+        <div class="summary-row"><span>Standorte</span><span>${S.selection.size}</span></div>
+        <div class="summary-row"><span>Werbeflächen</span><span>${flaechen}</span></div>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn ghost" data-close>Abbrechen</button>
+      <button class="btn cta" id="csvGo">Tabelle laden</button>
+    </div>`,
+  bg=>{
+    bg.querySelector('[data-close]').onclick = ()=> bg.close();
+    bg.querySelector('#csvGo').onclick = ()=>{ exportCSV(); bg.close(); toast('Tabelle wurde geladen.'); };
+  });
+});
+
+ingest(demoRows(), 'Beispieldaten');
+showGermany(false);
+setStage('de');
+restoreFromHash();
+</script>
+</body>
+</html>

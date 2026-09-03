@@ -1,0 +1,79 @@
+<div class="finder-shell">
+  <header class="topbar">
+    <button type="button" class="brand" aria-label="Zur Stadtübersicht" (click)="resetView()">
+      <strong>WALL</strong><span>DECAUX</span>
+    </button>
+
+    <label class="city-control">
+      <span class="pin" aria-hidden="true">⌖</span>
+      <select aria-label="Stadt auswählen" [value]="store.selectedCity() ?? ''" (change)="selectCity($event)">
+        <option value="">Stadt auswählen</option>
+        @for (city of store.cities(); track city) { <option [value]="city">{{ city }}</option> }
+      </select>
+    </label>
+
+    @if (store.selectedCity()) {
+      <app-media-filter />
+      <app-radius-filter />
+      <button type="button" class="chip origin-chip" (click)="store.originPanelOpen.update((open) => !open)">
+        Ausgangspunkt
+      </button>
+      <button type="button" class="chip reset-chip" (click)="resetView()">Zurücksetzen</button>
+    }
+
+    <span class="spacer"></span>
+    <a class="contact" href="https://www.walldecaux.de/ansprechpartner" target="_blank" rel="noopener">KONTAKT</a>
+    <details class="menu">
+      <summary aria-label="Menü">☰</summary>
+      <nav>
+        <a href="https://www.walldecaux.de" target="_blank" rel="noopener">WallDecaux</a>
+        <a href="https://www.walldecaux.de/impressum" target="_blank" rel="noopener">Impressum</a>
+        <a href="https://www.walldecaux.de/datenschutz" target="_blank" rel="noopener">Datenschutz</a>
+      </nav>
+    </details>
+  </header>
+
+  <main class="stage">
+    <app-site-map />
+
+    @if (store.isLoading()) {
+      <div class="status-card" role="status">
+        <span class="spinner" aria-hidden="true"></span>
+        <strong>Werbestandorte werden geladen …</strong>
+      </div>
+    } @else if (store.error()) {
+      <div class="status-card error" role="alert">
+        <strong>Die Standortdaten konnten nicht geladen werden.</strong>
+        <span>Prüfen Sie Ihre Verbindung und versuchen Sie es erneut.</span>
+        <button type="button" (click)="store.reloadSites()">Erneut laden</button>
+      </div>
+    } @else if (store.sites().features.length === 0) {
+      <div class="status-card" role="status">
+        <strong>Für 2026 sind keine Werbestandorte verfügbar.</strong>
+      </div>
+    } @else if (!store.selectedCity()) {
+      <aside class="intro-panel">
+        <p class="intro-lead">Wo wollen Sie Ihre Zielgruppen erreichen? Wählen Sie Ihre Stadt aus unserem Portfolio, filtern Sie mit verschiedenen Parametern und stellen Sie sich Ihre Werbestandorte zusammen — auch über mehrere Städte hinweg.</p>
+        <p class="intro-label">Aktuell verfügbare Städte</p>
+        <div class="city-grid">
+          @for (city of store.cities(); track city) {
+            <button type="button" (click)="store.selectCity(city)">{{ city }}</button>
+          }
+        </div>
+        <p class="inventory-count">{{ store.sites().features.length }} Standorte im aktuellen Bestand</p>
+        <div class="intro-legal"><a href="https://www.walldecaux.de/impressum" target="_blank" rel="noopener">Impressum</a><a href="https://www.walldecaux.de/datenschutz" target="_blank" rel="noopener">Datenschutz</a></div>
+      </aside>
+    } @else {
+      <app-origin-panel />
+      <app-result-list />
+    }
+
+    <footer class="legal-bar">
+      <a href="https://www.walldecaux.de/impressum" target="_blank" rel="noopener">Impressum</a>
+      <a href="https://www.walldecaux.de/datenschutz" target="_blank" rel="noopener">Datenschutz</a>
+    </footer>
+    <app-selection-dock />
+    <app-selection-drawer />
+    <app-request-dialog />
+  </main>
+</div>

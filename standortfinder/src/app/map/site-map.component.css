@@ -15,4 +15,134 @@
 }
 :host ::ng-deep .leaflet-container { font-family: var(--font); }
 :host ::ng-deep .leaflet-control-attribution { font-size: 10px; }
-:host ::ng-deep .leaflet-tooltip { border-radius: 1px; box-shadow: var(--shadow); }
+
+/* City labels replace the media markers in the Germany overview. */
+:host ::ng-deep .city-marker {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+:host ::ng-deep .city-marker-dot {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 14px;
+  background: var(--blue);
+  border: 2.5px solid #fff;
+  border-radius: 50%;
+  box-shadow: 0 1px 5px rgba(24, 24, 24, .35);
+  transition: transform .16s ease;
+}
+:host ::ng-deep .city-marker-name {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 3px 8px;
+  color: var(--text);
+  background: rgba(255, 255, 255, .9);
+  border-radius: 1px;
+  box-shadow: 0 1px 5px rgba(24, 24, 24, .18);
+  font-size: var(--t-sm);
+  transition: background .16s ease, color .16s ease;
+}
+:host ::ng-deep .city-marker-name em {
+  color: var(--ink-30);
+  font-size: var(--t-xs);
+  font-style: normal;
+}
+:host ::ng-deep .city-marker:hover .city-marker-dot {
+  transform: scale(1.25);
+}
+:host ::ng-deep .city-marker:hover .city-marker-name {
+  color: #fff;
+  background: var(--ink);
+}
+:host ::ng-deep .city-marker:hover .city-marker-name em {
+  color: rgba(255, 255, 255, .7);
+}
+
+/* Same 32px media markers as the reference prototype. The icon itself is a
+   cached SVG data URI, so Leaflet needs only one element per site. */
+:host ::ng-deep .site-marker {
+  display: block;
+  width: 32px;
+  height: 32px;
+  background-color: #fff;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: 22px;
+  border-radius: 50%;
+  box-shadow: 0 1px 6px rgba(24, 24, 24, .3);
+  transition: transform .12s ease;
+}
+:host ::ng-deep .site-marker.is-selected {
+  background-color: var(--blue);
+  box-shadow: 0 1px 6px rgba(20, 85, 150, .45);
+}
+:host ::ng-deep .site-marker:hover {
+  transform: scale(1.22);
+}
+:host ::ng-deep .leaflet-marker-icon:focus-visible .site-marker {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
+}
+
+/* Same popup hierarchy and dimensions as the reference prototype. */
+:host ::ng-deep .leaflet-popup-content-wrapper {
+  padding: 0;
+  border-radius: 1px;
+  box-shadow: var(--shadow-lg);
+}
+:host ::ng-deep .leaflet-popup-content {
+  width: 260px !important;
+  margin: 0;
+}
+:host ::ng-deep .site-popup {
+  padding: 15px 16px;
+}
+:host ::ng-deep .site-popup-icon {
+  display: block;
+  width: 24px;
+  height: 24px;
+  margin-bottom: 6px;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: 24px;
+}
+:host ::ng-deep .site-popup h4 {
+  margin: 0;
+  font-size: var(--t-sm);
+  font-weight: 700;
+}
+:host ::ng-deep .site-popup-id {
+  margin: 3px 0 10px;
+  color: var(--ink-30);
+  font-size: var(--t-xs);
+}
+:host ::ng-deep .site-popup-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 3px 0;
+  font-size: var(--t-sm);
+}
+:host ::ng-deep .site-popup-row span:first-child {
+  color: var(--ink-30);
+}
+:host ::ng-deep .site-popup-row span:last-child {
+  font-weight: 700;
+  text-align: right;
+}
+:host ::ng-deep .site-popup-action {
+  width: 100%;
+  margin-top: 12px;
+  padding: 8px 13px;
+  color: #fff;
+  background: var(--blue);
+  font-size: var(--t-sm);
+  font-weight: 700;
+}
+:host ::ng-deep .site-popup-action.is-selected {
+  color: var(--text);
+  background: var(--gray-b);
+}
